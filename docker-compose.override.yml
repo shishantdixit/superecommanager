@@ -1,0 +1,23 @@
+version: '3.8'
+
+# Development overrides
+services:
+  api:
+    build:
+      context: .
+      dockerfile: src/SuperEcomManager.API/Dockerfile
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+    volumes:
+      # Mount for hot reload during development (optional)
+      # - ./src:/src:ro
+    ports:
+      - "8080:8080"
+
+  postgres:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
