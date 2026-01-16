@@ -12,6 +12,7 @@ using SuperEcomManager.Domain.Entities.Orders;
 using SuperEcomManager.Domain.Entities.Settings;
 using SuperEcomManager.Domain.Entities.Shipments;
 using SuperEcomManager.Domain.Entities.Shipping;
+using SuperEcomManager.Domain.Entities.Webhooks;
 using SuperEcomManager.Infrastructure.Persistence.Interceptors;
 
 namespace SuperEcomManager.Infrastructure.Persistence;
@@ -84,6 +85,10 @@ public class TenantDbContext : DbContext, ITenantDbContext
 
     // Audit
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+
+    // Webhooks
+    public DbSet<WebhookSubscription> WebhookSubscriptions => Set<WebhookSubscription>();
+    public DbSet<WebhookDelivery> WebhookDeliveries => Set<WebhookDelivery>();
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {

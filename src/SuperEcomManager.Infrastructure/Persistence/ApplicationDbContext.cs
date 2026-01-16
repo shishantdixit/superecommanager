@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SuperEcomManager.Application.Common.Interfaces;
 using SuperEcomManager.Domain.Entities.Identity;
+using SuperEcomManager.Domain.Entities.Platform;
 using SuperEcomManager.Domain.Entities.Subscriptions;
 using SuperEcomManager.Domain.Entities.Tenants;
 
@@ -22,6 +23,9 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<PlanFeature> PlanFeatures => Set<PlanFeature>();
     public DbSet<Subscription> Subscriptions => Set<Subscription>();
     public DbSet<Permission> Permissions => Set<Permission>();
+    public DbSet<PlatformAdmin> PlatformAdmins => Set<PlatformAdmin>();
+    public DbSet<TenantActivityLog> TenantActivityLogs => Set<TenantActivityLog>();
+    public DbSet<PlatformSettings> PlatformSettings => Set<PlatformSettings>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

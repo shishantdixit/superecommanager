@@ -1,6 +1,16 @@
 using SuperEcomManager.Domain.Entities.Identity;
+using SuperEcomManager.Domain.Entities.Platform;
 
 namespace SuperEcomManager.Application.Common.Interfaces;
+
+/// <summary>
+/// Result of token generation.
+/// </summary>
+public class TokenResult
+{
+    public string Token { get; set; } = string.Empty;
+    public DateTime ExpiresAt { get; set; }
+}
 
 /// <summary>
 /// Service for JWT token generation and validation.
@@ -11,6 +21,11 @@ public interface ITokenService
     /// Generates an access token for the specified user.
     /// </summary>
     string GenerateAccessToken(User user, Guid tenantId, string tenantSlug, IEnumerable<string> permissions);
+
+    /// <summary>
+    /// Generates an access token for a platform admin.
+    /// </summary>
+    TokenResult GeneratePlatformAdminToken(PlatformAdmin admin);
 
     /// <summary>
     /// Generates a refresh token.

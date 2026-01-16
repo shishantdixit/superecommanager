@@ -10,6 +10,7 @@ using SuperEcomManager.Domain.Entities.Orders;
 using SuperEcomManager.Domain.Entities.Settings;
 using SuperEcomManager.Domain.Entities.Shipments;
 using SuperEcomManager.Domain.Entities.Shipping;
+using SuperEcomManager.Domain.Entities.Webhooks;
 
 namespace SuperEcomManager.Application.Common.Interfaces;
 
@@ -65,6 +66,10 @@ public interface ITenantDbContext
 
     // Audit
     DbSet<AuditLog> AuditLogs { get; }
+
+    // Webhooks
+    DbSet<WebhookSubscription> WebhookSubscriptions { get; }
+    DbSet<WebhookDelivery> WebhookDeliveries { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

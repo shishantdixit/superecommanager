@@ -9,6 +9,9 @@ using SuperEcomManager.Infrastructure.Authentication;
 using SuperEcomManager.Infrastructure.BackgroundJobs;
 using SuperEcomManager.Infrastructure.Persistence;
 using SuperEcomManager.Infrastructure.Persistence.Interceptors;
+using SuperEcomManager.Infrastructure.Persistence.Migrations;
+using SuperEcomManager.Infrastructure.Persistence.Seeding;
+using SuperEcomManager.Infrastructure.RateLimiting;
 using SuperEcomManager.Infrastructure.Services;
 
 namespace SuperEcomManager.Infrastructure;
@@ -67,6 +70,13 @@ public static class DependencyInjection
         services.AddScoped<IEventBus, EventBus>();
         services.AddScoped<IPermissionService, PermissionService>();
         services.AddScoped<IFeatureFlagService, FeatureFlagService>();
+        services.AddScoped<IWebhookDispatcher, WebhookDispatcherService>();
+
+        // Register HttpClient for webhook delivery
+        services.AddHttpClient("Webhook", client =>
+        {
+            client.DefaultRequestHeaders.Add("User-Agent", "SuperEcomManager-Webhook/1.0");
+        });
 
         // Register distributed cache (Redis)
         var redisConnection = configuration.GetConnectionString("Redis");
@@ -109,6 +119,22 @@ public static class DependencyInjection
             };
         });
 
+        // Configure authorization policies
+        services.AddAuthorization(options =>
+        {
+            // Policy for platform admins
+            options.AddPolicy("PlatformAdmin", policy =>
+                policy.RequireRole("PlatformAdmin", "SuperAdmin"));
+
+            // Policy for super admins only
+            options.AddPolicy("SuperAdmin", policy =>
+                policy.RequireRole("SuperAdmin"));
+
+            // Policy for tenant users (requires tenant context)
+            options.AddPolicy("TenantUser", policy =>
+                policy.RequireClaim("tenant_id"));
+        });
+
         // Register authentication services
         services.AddScoped<ITokenService, TokenService>();
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
@@ -117,6 +143,51 @@ public static class DependencyInjection
         services.Configure<OrderSyncSettings>(configuration.GetSection(OrderSyncSettings.SectionName));
         services.AddScoped<OrderSyncJob>();
         services.AddHostedService<OrderSyncHostedService>();
+
+        // Webhook retry job
+        services.Configure<WebhookRetrySettings>(configuration.GetSection(WebhookRetrySettings.SectionName));
+        services.AddScoped<WebhookRetryJob>();
+        services.AddHostedService<WebhookRetryHostedService>();
+
+        // Notification sender job
+        services.Configure<NotificationSenderSettings>(configuration.GetSection(NotificationSenderSettings.SectionName));
+        services.AddScoped<NotificationSenderJob>();
+        services.AddHostedService<NotificationSenderHostedService>();
+
+        // Data cleanup job
+        services.Configure<DataCleanupSettings>(configuration.GetSection(DataCleanupSettings.SectionName));
+        services.AddScoped<DataCleanupJob>();
+        services.AddHostedService<DataCleanupHostedService>();
+
+        // Inventory sync job
+        services.Configure<InventorySyncSettings>(configuration.GetSection(InventorySyncSettings.SectionName));
+        services.AddScoped<InventorySyncJob>();
+        services.AddHostedService<InventorySyncHostedService>();
+
+        // NDR follow-up job
+        services.Configure<NdrFollowUpSettings>(configuration.GetSection(NdrFollowUpSettings.SectionName));
+        services.AddScoped<NdrFollowUpJob>();
+        services.AddHostedService<NdrFollowUpHostedService>();
+
+        // Stock alert job
+        services.Configure<StockAlertSettings>(configuration.GetSection(StockAlertSettings.SectionName));
+        services.AddScoped<StockAlertJob>();
+        services.AddHostedService<StockAlertHostedService>();
+
+        // Shipment tracking update job
+        services.Configure<ShipmentTrackingSettings>(configuration.GetSection(ShipmentTrackingSettings.SectionName));
+        services.AddScoped<ShipmentTrackingUpdateJob>();
+        services.AddHostedService<ShipmentTrackingHostedService>();
+
+        // Rate limiting and API usage tracking
+        services.AddRateLimitingServices(configuration);
+        services.AddScoped<IApiUsageTracker, ApiUsageTracker>();
+
+        // Database seeders and migration service
+        services.AddScoped<DatabaseSeeder>();
+        services.AddScoped<TenantSeeder>();
+        services.AddScoped<ITenantSeeder>(sp => sp.GetRequiredService<TenantSeeder>());
+        services.AddScoped<IMigrationService, MigrationService>();
 
         return services;
     }

@@ -1,6 +1,7 @@
 using SuperEcomManager.API.Middleware;
 using SuperEcomManager.Application;
 using SuperEcomManager.Infrastructure;
+using SuperEcomManager.Infrastructure.RateLimiting;
 using SuperEcomManager.Integrations;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -82,6 +83,9 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 
 app.UseCors("AllowedOrigins");
+
+// Rate limiting middleware
+app.UseRateLimitingMiddleware();
 
 // Custom middleware
 app.UseMiddleware<ExceptionHandlerMiddleware>();

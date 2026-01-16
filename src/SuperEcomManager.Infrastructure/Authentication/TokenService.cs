@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using SuperEcomManager.Application.Common.Interfaces;
 using SuperEcomManager.Domain.Entities.Identity;
+using SuperEcomManager.Domain.Entities.Platform;
 using SuperEcomManager.Infrastructure.Persistence;
 
 namespace SuperEcomManager.Infrastructure.Authentication;
@@ -72,6 +73,43 @@ public class TokenService : ITokenService
         using var rng = RandomNumberGenerator.Create();
         rng.GetBytes(randomBytes);
         return Convert.ToBase64String(randomBytes);
+    }
+
+    public TokenResult GeneratePlatformAdminToken(PlatformAdmin admin)
+    {
+        var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtSettings.Secret));
+        var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+
+        var claims = new List<Claim>
+        {
+            new(JwtRegisteredClaimNames.Sub, admin.Id.ToString()),
+            new(JwtRegisteredClaimNames.Email, admin.Email),
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new("name", admin.FullName),
+            new("type", "platform_admin"),
+            new(ClaimTypes.Role, "PlatformAdmin")
+        };
+
+        if (admin.IsSuperAdmin)
+        {
+            claims.Add(new Claim(ClaimTypes.Role, "SuperAdmin"));
+        }
+
+        var expiresAt = DateTime.UtcNow.AddMinutes(_jwtSettings.AccessTokenExpiryMinutes);
+
+        var token = new JwtSecurityToken(
+            issuer: _jwtSettings.Issuer,
+            audience: _jwtSettings.Audience,
+            claims: claims,
+            expires: expiresAt,
+            signingCredentials: credentials
+        );
+
+        return new TokenResult
+        {
+            Token = new JwtSecurityTokenHandler().WriteToken(token),
+            ExpiresAt = expiresAt
+        };
     }
 
     public async Task<Guid?> ValidateRefreshTokenAsync(string refreshToken, CancellationToken cancellationToken = default)

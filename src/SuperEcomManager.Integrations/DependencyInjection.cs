@@ -8,6 +8,10 @@ using SuperEcomManager.Integrations.Couriers.Shiprocket;
 using SuperEcomManager.Integrations.Couriers.Delhivery;
 using SuperEcomManager.Integrations.Couriers.BlueDart;
 using SuperEcomManager.Integrations.Couriers.DTDC;
+using SuperEcomManager.Integrations.Amazon;
+using SuperEcomManager.Integrations.Common;
+using SuperEcomManager.Integrations.Flipkart;
+using SuperEcomManager.Integrations.Meesho;
 using SuperEcomManager.Integrations.Shopify;
 using SuperEcomManager.Integrations.Shopify.Services;
 using SuperEcomManager.Integrations.Shopify.Webhooks;
@@ -104,6 +108,40 @@ public static class DependencyInjection
             .AddAdapter<BlueDartAdapter>(CourierType.BlueDart)
             .AddAdapter<DTDCAdapter>(CourierType.DTDC)
             .Build();
+
+        // Register Amazon settings and adapter
+        services.Configure<AmazonSettings>(configuration.GetSection(AmazonSettings.SectionName));
+        services.AddHttpClient("Amazon", client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(30);
+        })
+        .AddPolicyHandler(GetRetryPolicy())
+        .AddPolicyHandler(GetCircuitBreakerPolicy());
+
+        // Register Flipkart settings and adapter
+        services.Configure<FlipkartSettings>(configuration.GetSection(FlipkartSettings.SectionName));
+        services.AddHttpClient("Flipkart", client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(30);
+        })
+        .AddPolicyHandler(GetRetryPolicy())
+        .AddPolicyHandler(GetCircuitBreakerPolicy());
+
+        // Register Meesho settings and adapter
+        services.Configure<MeeshoSettings>(configuration.GetSection(MeeshoSettings.SectionName));
+        services.AddHttpClient("Meesho", client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(30);
+        })
+        .AddPolicyHandler(GetRetryPolicy())
+        .AddPolicyHandler(GetCircuitBreakerPolicy());
+
+        // Register channel adapter factory with all adapters
+        services.AddChannelAdapters()
+            .AddAdapter<AmazonChannelAdapter>(ChannelType.Amazon)
+            .AddAdapter<FlipkartChannelAdapter>(ChannelType.Flipkart)
+            .AddAdapter<MeeshoChannelAdapter>(ChannelType.Meesho)
+            .BuildChannelAdapters();
 
         return services;
     }

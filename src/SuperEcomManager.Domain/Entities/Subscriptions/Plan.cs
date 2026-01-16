@@ -48,4 +48,43 @@ public class Plan : AuditableEntity
             CreatedAt = DateTime.UtcNow
         };
     }
+
+    public void Update(
+        string name,
+        string? description,
+        decimal monthlyPrice,
+        decimal yearlyPrice,
+        int maxUsers,
+        int maxOrders,
+        int maxChannels,
+        int sortOrder)
+    {
+        Name = name;
+        Description = description;
+        MonthlyPrice = monthlyPrice;
+        YearlyPrice = yearlyPrice;
+        MaxUsers = maxUsers;
+        MaxOrders = maxOrders;
+        MaxChannels = maxChannels;
+        SortOrder = sortOrder;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void Activate()
+    {
+        IsActive = true;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void Deactivate()
+    {
+        IsActive = false;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void SetSortOrder(int sortOrder)
+    {
+        SortOrder = sortOrder;
+        UpdatedAt = DateTime.UtcNow;
+    }
 }

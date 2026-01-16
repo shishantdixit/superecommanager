@@ -38,12 +38,15 @@ public class Permission : BaseEntity
         yield return Create("orders.edit", "Edit Orders", "orders", "Edit order details");
         yield return Create("orders.cancel", "Cancel Orders", "orders", "Cancel orders");
         yield return Create("orders.export", "Export Orders", "orders", "Export order data");
+        yield return Create("orders.bulk", "Bulk Order Operations", "orders", "Perform bulk updates on orders");
 
         // Shipments module
         yield return Create("shipments.view", "View Shipments", "shipments", "View shipment list and details");
         yield return Create("shipments.create", "Create Shipments", "shipments", "Create new shipments");
         yield return Create("shipments.cancel", "Cancel Shipments", "shipments", "Cancel shipments");
         yield return Create("shipments.track", "Track Shipments", "shipments", "View tracking information");
+        yield return Create("shipments.bulk", "Bulk Shipment Operations", "shipments", "Perform bulk shipment creation");
+        yield return Create("shipments.export", "Export Shipments", "shipments", "Export shipment data");
 
         // NDR module
         yield return Create("ndr.view", "View NDR", "ndr", "View NDR inbox and records");
@@ -51,6 +54,7 @@ public class Permission : BaseEntity
         yield return Create("ndr.assign", "Assign NDR", "ndr", "Assign NDR to employees");
         yield return Create("ndr.reattempt", "Schedule Reattempt", "ndr", "Schedule delivery reattempts");
         yield return Create("ndr.export", "Export NDR", "ndr", "Export NDR data");
+        yield return Create("ndr.bulk", "Bulk NDR Operations", "ndr", "Perform bulk NDR assign/status updates");
 
         // Inventory module
         yield return Create("inventory.view", "View Inventory", "inventory", "View products and stock levels");
@@ -84,6 +88,14 @@ public class Permission : BaseEntity
         // Analytics module
         yield return Create("analytics.view", "View Analytics", "analytics", "View analytics dashboard");
         yield return Create("analytics.export", "Export Analytics", "analytics", "Export analytics reports");
+
+        // Webhooks module
+        yield return Create("webhooks.view", "View Webhooks", "webhooks", "View webhook subscriptions and logs");
+        yield return Create("webhooks.manage", "Manage Webhooks", "webhooks", "Create, edit, and delete webhook subscriptions");
+
+        // Audit module
+        yield return Create("audit.view", "View Audit Logs", "audit", "View audit log entries");
+        yield return Create("audit.export", "Export Audit Logs", "audit", "Export audit log data");
 
         // Security module
         yield return Create("security.view", "View Security", "security", "View security settings");

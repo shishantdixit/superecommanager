@@ -2,8 +2,10 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using SuperEcomManager.Application.Common.Models;
 using SuperEcomManager.Application.Features.Auth;
+using SuperEcomManager.Infrastructure.RateLimiting;
 
 namespace SuperEcomManager.API.Controllers;
 
@@ -12,6 +14,7 @@ namespace SuperEcomManager.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
+[EnableRateLimiting(RateLimitPolicies.Auth)]
 public class AuthController : ApiControllerBase
 {
     /// <summary>

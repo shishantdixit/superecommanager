@@ -56,4 +56,58 @@ public class Subscription : AuditableEntity
         CancellationReason = reason;
         UpdatedAt = DateTime.UtcNow;
     }
+
+    public void Renew(decimal price, bool isYearly)
+    {
+        Status = SubscriptionStatus.Active;
+        PriceAtSubscription = price;
+        IsYearly = isYearly;
+        StartDate = EndDate ?? DateTime.UtcNow;
+        EndDate = isYearly ? StartDate.AddYears(1) : StartDate.AddMonths(1);
+        CancelledAt = null;
+        CancellationReason = null;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void ChangePlan(Guid newPlanId, decimal price, bool isYearly)
+    {
+        PlanId = newPlanId;
+        PriceAtSubscription = price;
+        IsYearly = isYearly;
+        // Keep current end date for upgrades/downgrades
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void Pause()
+    {
+        Status = SubscriptionStatus.Paused;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void Resume()
+    {
+        if (Status == SubscriptionStatus.Paused)
+        {
+            Status = SubscriptionStatus.Active;
+            UpdatedAt = DateTime.UtcNow;
+        }
+    }
+
+    public void MarkPastDue()
+    {
+        Status = SubscriptionStatus.PastDue;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void Expire()
+    {
+        Status = SubscriptionStatus.Expired;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public bool IsExpired => Status == SubscriptionStatus.Expired ||
+                             (EndDate.HasValue && EndDate.Value < DateTime.UtcNow);
+
+    public bool IsInTrial => Status == SubscriptionStatus.Trial &&
+                             TrialEndsAt.HasValue && TrialEndsAt.Value > DateTime.UtcNow;
 }
