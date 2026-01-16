@@ -7,8 +7,15 @@ namespace SuperEcomManager.Domain.ValueObjects;
 /// </summary>
 public sealed partial class PhoneNumber : IEquatable<PhoneNumber>
 {
-    public string CountryCode { get; }
-    public string Number { get; }
+    public string CountryCode { get; private set; }
+    public string Number { get; private set; }
+
+    // Required for EF Core
+    private PhoneNumber()
+    {
+        CountryCode = "+91";
+        Number = string.Empty;
+    }
 
     public PhoneNumber(string number, string countryCode = "+91")
     {

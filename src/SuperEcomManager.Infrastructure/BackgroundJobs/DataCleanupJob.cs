@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SuperEcomManager.Application.Common.Interfaces;
 using SuperEcomManager.Domain.Enums;
+using SuperEcomManager.Infrastructure.Persistence;
 
 namespace SuperEcomManager.Infrastructure.BackgroundJobs;
 
@@ -26,57 +27,110 @@ public class DataCleanupJob : IBackgroundJob
     {
         var settings = args as DataCleanupJobArgs ?? new DataCleanupJobArgs();
 
-        _logger.LogInformation("Starting data cleanup job");
+        _logger.LogDebug("Starting data cleanup job");
 
         try
         {
+            // Get all active tenants from shared database
             using var scope = _serviceProvider.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<ITenantDbContext>();
+            var appDbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
-            var totalDeleted = 0;
+            var tenants = await appDbContext.Tenants
+                .AsNoTracking()
+                .Where(t => t.Status == Domain.Enums.TenantStatus.Active)
+                .Select(t => new { t.Id, t.SchemaName, t.Slug })
+                .ToListAsync(cancellationToken);
 
-            // Clean up old audit logs
-            if (settings.CleanAuditLogs)
+            if (tenants.Count == 0)
             {
-                var auditCutoff = DateTime.UtcNow.AddDays(-settings.AuditLogRetentionDays);
-                var auditLogsDeleted = await CleanupAuditLogsAsync(dbContext, auditCutoff, cancellationToken);
-                totalDeleted += auditLogsDeleted;
-                _logger.LogInformation("Deleted {Count} old audit logs", auditLogsDeleted);
+                _logger.LogDebug("No active tenants found");
+                return;
             }
 
-            // Clean up old webhook deliveries
-            if (settings.CleanWebhookDeliveries)
+            var grandTotalDeleted = 0;
+
+            // Process cleanup for each tenant
+            foreach (var tenant in tenants)
             {
-                var webhookCutoff = DateTime.UtcNow.AddDays(-settings.WebhookDeliveryRetentionDays);
-                var webhooksDeleted = await CleanupWebhookDeliveriesAsync(dbContext, webhookCutoff, cancellationToken);
-                totalDeleted += webhooksDeleted;
-                _logger.LogInformation("Deleted {Count} old webhook deliveries", webhooksDeleted);
+                try
+                {
+                    var deleted = await ProcessTenantCleanupAsync(
+                        tenant.Id, tenant.SchemaName, tenant.Slug, settings, cancellationToken);
+                    grandTotalDeleted += deleted;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "Failed to process cleanup for tenant {TenantId}", tenant.Id);
+                }
             }
 
-            // Clean up old notification logs
-            if (settings.CleanNotificationLogs)
+            if (grandTotalDeleted > 0)
             {
-                var notificationCutoff = DateTime.UtcNow.AddDays(-settings.NotificationLogRetentionDays);
-                var notificationsDeleted = await CleanupNotificationLogsAsync(dbContext, notificationCutoff, cancellationToken);
-                totalDeleted += notificationsDeleted;
-                _logger.LogInformation("Deleted {Count} old notification logs", notificationsDeleted);
+                _logger.LogInformation("Data cleanup job completed. Total records deleted: {Total}", grandTotalDeleted);
             }
-
-            // Clean up expired refresh tokens
-            if (settings.CleanExpiredTokens)
-            {
-                var tokensDeleted = await CleanupExpiredTokensAsync(dbContext, cancellationToken);
-                totalDeleted += tokensDeleted;
-                _logger.LogInformation("Deleted {Count} expired refresh tokens", tokensDeleted);
-            }
-
-            _logger.LogInformation("Data cleanup job completed. Total records deleted: {Total}", totalDeleted);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Data cleanup job failed");
             throw;
         }
+    }
+
+    private async Task<int> ProcessTenantCleanupAsync(
+        Guid tenantId, string schemaName, string slug, DataCleanupJobArgs settings, CancellationToken cancellationToken)
+    {
+        // Create a new scope for this tenant
+        using var tenantScope = _serviceProvider.CreateScope();
+
+        // Set the tenant context
+        var currentTenantService = tenantScope.ServiceProvider.GetRequiredService<ICurrentTenantService>();
+        currentTenantService.SetTenant(tenantId, schemaName, slug);
+
+        var dbContext = tenantScope.ServiceProvider.GetRequiredService<ITenantDbContext>();
+
+        var totalDeleted = 0;
+
+        // Clean up old audit logs
+        if (settings.CleanAuditLogs)
+        {
+            var auditCutoff = DateTime.UtcNow.AddDays(-settings.AuditLogRetentionDays);
+            var auditLogsDeleted = await CleanupAuditLogsAsync(dbContext, auditCutoff, cancellationToken);
+            totalDeleted += auditLogsDeleted;
+            if (auditLogsDeleted > 0)
+                _logger.LogDebug("Deleted {Count} old audit logs for tenant {TenantId}", auditLogsDeleted, tenantId);
+        }
+
+        // Clean up old webhook deliveries
+        if (settings.CleanWebhookDeliveries)
+        {
+            var webhookCutoff = DateTime.UtcNow.AddDays(-settings.WebhookDeliveryRetentionDays);
+            var webhooksDeleted = await CleanupWebhookDeliveriesAsync(dbContext, webhookCutoff, cancellationToken);
+            totalDeleted += webhooksDeleted;
+            if (webhooksDeleted > 0)
+                _logger.LogDebug("Deleted {Count} old webhook deliveries for tenant {TenantId}", webhooksDeleted, tenantId);
+        }
+
+        // Clean up old notification logs
+        if (settings.CleanNotificationLogs)
+        {
+            var notificationCutoff = DateTime.UtcNow.AddDays(-settings.NotificationLogRetentionDays);
+            var notificationsDeleted = await CleanupNotificationLogsAsync(dbContext, notificationCutoff, cancellationToken);
+            totalDeleted += notificationsDeleted;
+            if (notificationsDeleted > 0)
+                _logger.LogDebug("Deleted {Count} old notification logs for tenant {TenantId}", notificationsDeleted, tenantId);
+        }
+
+        // Clean up expired refresh tokens
+        if (settings.CleanExpiredTokens)
+        {
+            var tokensDeleted = await CleanupExpiredTokensAsync(dbContext, cancellationToken);
+            totalDeleted += tokensDeleted;
+            if (tokensDeleted > 0)
+                _logger.LogDebug("Deleted {Count} expired refresh tokens for tenant {TenantId}", tokensDeleted, tenantId);
+        }
+
+        return totalDeleted;
     }
 
     private async Task<int> CleanupAuditLogsAsync(

@@ -1,6 +1,7 @@
 using SuperEcomManager.API.Middleware;
 using SuperEcomManager.Application;
 using SuperEcomManager.Infrastructure;
+using SuperEcomManager.Infrastructure.Persistence.Seeding;
 using SuperEcomManager.Infrastructure.RateLimiting;
 using SuperEcomManager.Integrations;
 
@@ -72,6 +73,17 @@ builder.Services.AddSwaggerGen(options =>
 builder.Services.AddHealthChecks();
 
 var app = builder.Build();
+
+// Initialize database in development
+if (app.Environment.IsDevelopment())
+{
+    await app.InitializeDatabaseAsync();
+
+    // Seed development data (demo tenant)
+    using var scope = app.Services.CreateScope();
+    var devSeeder = scope.ServiceProvider.GetRequiredService<DevelopmentSeeder>();
+    await devSeeder.SeedDevelopmentDataAsync();
+}
 
 // Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())

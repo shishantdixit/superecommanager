@@ -1,6 +1,8 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SuperEcomManager.Application.Common.Interfaces;
+using SuperEcomManager.Infrastructure.Persistence;
 
 namespace SuperEcomManager.Infrastructure.BackgroundJobs;
 
@@ -22,22 +24,63 @@ public class WebhookRetryJob : IBackgroundJob
 
     public async Task ExecuteAsync(object? args, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Starting webhook retry job");
+        _logger.LogDebug("Starting webhook retry job");
 
         try
         {
+            // Get all active tenants from shared database
             using var scope = _serviceProvider.CreateScope();
-            var webhookDispatcher = scope.ServiceProvider.GetRequiredService<IWebhookDispatcher>();
+            var appDbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
-            await webhookDispatcher.RetryFailedDeliveriesAsync(cancellationToken);
+            var tenants = await appDbContext.Tenants
+                .AsNoTracking()
+                .Where(t => t.Status == Domain.Enums.TenantStatus.Active)
+                .Select(t => new { t.Id, t.SchemaName, t.Slug })
+                .ToListAsync(cancellationToken);
 
-            _logger.LogInformation("Webhook retry job completed successfully");
+            if (tenants.Count == 0)
+            {
+                _logger.LogDebug("No active tenants found");
+                return;
+            }
+
+            // Process webhook retries for each tenant
+            foreach (var tenant in tenants)
+            {
+                try
+                {
+                    await ProcessTenantWebhookRetriesAsync(
+                        tenant.Id, tenant.SchemaName, tenant.Slug, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "Failed to process webhook retries for tenant {TenantId}", tenant.Id);
+                }
+            }
+
+            _logger.LogDebug("Webhook retry job completed");
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Webhook retry job failed");
             throw;
         }
+    }
+
+    private async Task ProcessTenantWebhookRetriesAsync(
+        Guid tenantId, string schemaName, string slug, CancellationToken cancellationToken)
+    {
+        // Create a new scope for this tenant
+        using var tenantScope = _serviceProvider.CreateScope();
+
+        // Set the tenant context
+        var currentTenantService = tenantScope.ServiceProvider.GetRequiredService<ICurrentTenantService>();
+        currentTenantService.SetTenant(tenantId, schemaName, slug);
+
+        var webhookDispatcher = tenantScope.ServiceProvider.GetRequiredService<IWebhookDispatcher>();
+
+        await webhookDispatcher.RetryFailedDeliveriesAsync(cancellationToken);
     }
 }
 

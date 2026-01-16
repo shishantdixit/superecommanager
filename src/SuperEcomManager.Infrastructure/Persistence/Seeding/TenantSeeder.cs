@@ -37,9 +37,15 @@ public class TenantSeeder : ITenantSeeder
     {
         _logger.LogInformation("Initializing tenant {TenantId} with schema {Schema}", tenantId, schemaName);
 
+        // Create a scope and set tenant context BEFORE resolving TenantDbContext
         using var scope = _serviceProvider.CreateScope();
 
-        // Create schema
+        // Set tenant context - this is critical for TenantDbContext to use the correct schema
+        var currentTenantService = scope.ServiceProvider.GetRequiredService<ICurrentTenantService>();
+        var slug = schemaName.StartsWith("tenant_") ? schemaName.Substring(7) : schemaName;
+        currentTenantService.SetTenant(tenantId, schemaName, slug);
+
+        // Create schema and apply migrations
         await CreateTenantSchemaAsync(scope, schemaName, cancellationToken);
 
         // Seed default roles
@@ -56,17 +62,34 @@ public class TenantSeeder : ITenantSeeder
 
     private async Task CreateTenantSchemaAsync(IServiceScope scope, string schemaName, CancellationToken cancellationToken)
     {
-        var dbContext = scope.ServiceProvider.GetRequiredService<TenantDbContext>();
-
-        // Create schema if it doesn't exist
-        await dbContext.Database.ExecuteSqlRawAsync(
+        // Create schema using ApplicationDbContext (not tenant-specific)
+        var appDbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await appDbContext.Database.ExecuteSqlRawAsync(
             $"CREATE SCHEMA IF NOT EXISTS \"{schemaName}\"",
             cancellationToken);
 
-        // Apply migrations to the tenant schema
-        await dbContext.Database.MigrateAsync(cancellationToken);
+        // Tenant context must already be set before resolving TenantDbContext
+        var dbContext = scope.ServiceProvider.GetRequiredService<TenantDbContext>();
 
-        _logger.LogDebug("Created schema {Schema}", schemaName);
+        // Open the connection explicitly so SET search_path persists for MigrateAsync
+        await dbContext.Database.OpenConnectionAsync(cancellationToken);
+        try
+        {
+            // Set PostgreSQL search_path to the tenant schema before applying migrations
+            // This ensures unqualified table names in migrations are created in the correct schema
+            await dbContext.Database.ExecuteSqlRawAsync(
+                $"SET search_path TO \"{schemaName}\", public",
+                cancellationToken);
+
+            // Apply migrations to the tenant schema (uses the same connection)
+            await dbContext.Database.MigrateAsync(cancellationToken);
+
+            _logger.LogDebug("Created schema {Schema} and applied migrations", schemaName);
+        }
+        finally
+        {
+            await dbContext.Database.CloseConnectionAsync();
+        }
     }
 
     private async Task SeedDefaultRolesAsync(IServiceScope scope, string schemaName, CancellationToken cancellationToken)
@@ -80,7 +103,20 @@ public class TenantSeeder : ITenantSeeder
             return;
         }
 
-        var permissions = await appDbContext.Permissions.ToListAsync(cancellationToken);
+        // First, copy permissions from shared schema to tenant schema if they don't exist
+        if (!await dbContext.Permissions.AnyAsync(cancellationToken))
+        {
+            var sharedPermissions = await appDbContext.Permissions.ToListAsync(cancellationToken);
+            foreach (var perm in sharedPermissions)
+            {
+                var tenantPerm = Permission.Create(perm.Code, perm.Name, perm.Module, perm.Description);
+                dbContext.Permissions.Add(tenantPerm);
+            }
+            await dbContext.SaveChangesAsync(cancellationToken);
+            _logger.LogDebug("Copied {Count} permissions to tenant schema", sharedPermissions.Count);
+        }
+
+        var permissions = await dbContext.Permissions.ToListAsync(cancellationToken);
         var permissionsByCode = permissions.ToDictionary(p => p.Code);
 
         // Owner role (all permissions)

@@ -46,8 +46,9 @@ public class PlatformAdminLoginCommandHandler : IRequestHandler<PlatformAdminLog
 
     public async Task<Result<PlatformAdminAuthResponse>> Handle(PlatformAdminLoginCommand request, CancellationToken cancellationToken)
     {
+        var normalizedEmail = request.Email.Trim().ToLowerInvariant();
         var admin = await _dbContext.PlatformAdmins
-            .FirstOrDefaultAsync(a => a.Email == request.Email && a.DeletedAt == null, cancellationToken);
+            .FirstOrDefaultAsync(a => a.Email == normalizedEmail && a.DeletedAt == null, cancellationToken);
 
         if (admin == null)
         {

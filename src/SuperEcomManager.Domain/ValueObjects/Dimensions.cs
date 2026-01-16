@@ -6,16 +6,19 @@ namespace SuperEcomManager.Domain.ValueObjects;
 public sealed class Dimensions : IEquatable<Dimensions>
 {
     /// <summary>Length in centimeters</summary>
-    public decimal LengthCm { get; }
+    public decimal LengthCm { get; private set; }
 
     /// <summary>Width in centimeters</summary>
-    public decimal WidthCm { get; }
+    public decimal WidthCm { get; private set; }
 
     /// <summary>Height in centimeters</summary>
-    public decimal HeightCm { get; }
+    public decimal HeightCm { get; private set; }
 
     /// <summary>Weight in kilograms</summary>
-    public decimal WeightKg { get; }
+    public decimal WeightKg { get; private set; }
+
+    // Required for EF Core
+    private Dimensions() { }
 
     public Dimensions(decimal lengthCm, decimal widthCm, decimal heightCm, decimal weightKg)
     {

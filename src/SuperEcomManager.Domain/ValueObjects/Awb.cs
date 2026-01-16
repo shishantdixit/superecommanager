@@ -5,8 +5,15 @@ namespace SuperEcomManager.Domain.ValueObjects;
 /// </summary>
 public sealed class Awb : IEquatable<Awb>
 {
-    public string Value { get; }
-    public string CourierCode { get; }
+    public string Value { get; private set; }
+    public string CourierCode { get; private set; }
+
+    // Required for EF Core
+    private Awb()
+    {
+        Value = string.Empty;
+        CourierCode = string.Empty;
+    }
 
     public Awb(string value, string courierCode)
     {

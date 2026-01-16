@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SuperEcomManager.Application.Common.Interfaces;
 using SuperEcomManager.Domain.Enums;
+using SuperEcomManager.Infrastructure.Persistence;
 
 namespace SuperEcomManager.Infrastructure.BackgroundJobs;
 
@@ -26,58 +27,116 @@ public class ShipmentTrackingUpdateJob : IBackgroundJob
     {
         var settings = args as ShipmentTrackingJobArgs ?? new ShipmentTrackingJobArgs();
 
-        _logger.LogInformation("Starting shipment tracking update job");
+        _logger.LogDebug("Starting shipment tracking update job");
 
         try
         {
+            // Get all active tenants from shared database
             using var scope = _serviceProvider.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<ITenantDbContext>();
-            var webhookDispatcher = scope.ServiceProvider.GetRequiredService<IWebhookDispatcher>();
+            var appDbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
-            // Get shipments that need tracking updates
-            var shipmentsToUpdate = await GetShipmentsForTrackingAsync(
-                dbContext,
-                settings.StaleAfterHours,
-                cancellationToken);
+            var tenants = await appDbContext.Tenants
+                .AsNoTracking()
+                .Where(t => t.Status == Domain.Enums.TenantStatus.Active)
+                .Select(t => new { t.Id, t.SchemaName, t.Slug })
+                .ToListAsync(cancellationToken);
 
-            _logger.LogInformation("Found {Count} shipments to update", shipmentsToUpdate.Count);
+            if (tenants.Count == 0)
+            {
+                _logger.LogDebug("No active tenants found");
+                return;
+            }
 
-            var updatedCount = 0;
-            var errorCount = 0;
+            var totalUpdated = 0;
+            var totalErrors = 0;
 
-            foreach (var shipment in shipmentsToUpdate)
+            // Process shipment tracking for each tenant
+            foreach (var tenant in tenants)
             {
                 try
                 {
-                    var updated = await UpdateShipmentTrackingAsync(
-                        dbContext,
-                        webhookDispatcher,
-                        shipment,
-                        cancellationToken);
-
-                    if (updated)
-                        updatedCount++;
+                    var (updated, errors) = await ProcessTenantShipmentTrackingAsync(
+                        tenant.Id, tenant.SchemaName, tenant.Slug, settings, cancellationToken);
+                    totalUpdated += updated;
+                    totalErrors += errors;
                 }
                 catch (Exception ex)
                 {
-                    errorCount++;
                     _logger.LogWarning(ex,
-                        "Failed to update tracking for shipment {ShipmentId} ({AwbNumber})",
-                        shipment.Id, shipment.AwbNumber);
+                        "Failed to process shipment tracking for tenant {TenantId}", tenant.Id);
                 }
             }
 
-            await dbContext.SaveChangesAsync(cancellationToken);
-
-            _logger.LogInformation(
-                "Shipment tracking update job completed. Updated: {Updated}, Errors: {Errors}",
-                updatedCount, errorCount);
+            if (totalUpdated > 0 || totalErrors > 0)
+            {
+                _logger.LogInformation(
+                    "Shipment tracking update job completed. Updated: {Updated}, Errors: {Errors}",
+                    totalUpdated, totalErrors);
+            }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Shipment tracking update job failed");
             throw;
         }
+    }
+
+    private async Task<(int updated, int errors)> ProcessTenantShipmentTrackingAsync(
+        Guid tenantId, string schemaName, string slug, ShipmentTrackingJobArgs settings, CancellationToken cancellationToken)
+    {
+        // Create a new scope for this tenant
+        using var tenantScope = _serviceProvider.CreateScope();
+
+        // Set the tenant context
+        var currentTenantService = tenantScope.ServiceProvider.GetRequiredService<ICurrentTenantService>();
+        currentTenantService.SetTenant(tenantId, schemaName, slug);
+
+        var dbContext = tenantScope.ServiceProvider.GetRequiredService<ITenantDbContext>();
+        var webhookDispatcher = tenantScope.ServiceProvider.GetRequiredService<IWebhookDispatcher>();
+
+        // Get shipments that need tracking updates
+        var shipmentsToUpdate = await GetShipmentsForTrackingAsync(
+            dbContext,
+            settings.StaleAfterHours,
+            cancellationToken);
+
+        if (shipmentsToUpdate.Count > 0)
+        {
+            _logger.LogDebug("Found {Count} shipments to update for tenant {TenantId}",
+                shipmentsToUpdate.Count, tenantId);
+        }
+
+        var updatedCount = 0;
+        var errorCount = 0;
+
+        foreach (var shipment in shipmentsToUpdate)
+        {
+            try
+            {
+                var updated = await UpdateShipmentTrackingAsync(
+                    dbContext,
+                    webhookDispatcher,
+                    shipment,
+                    cancellationToken);
+
+                if (updated)
+                    updatedCount++;
+            }
+            catch (Exception ex)
+            {
+                errorCount++;
+                _logger.LogWarning(ex,
+                    "Failed to update tracking for shipment {ShipmentId} ({AwbNumber})",
+                    shipment.Id, shipment.AwbNumber);
+            }
+        }
+
+        if (updatedCount > 0)
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        return (updatedCount, errorCount);
     }
 
     private async Task<List<ShipmentTrackingItem>> GetShipmentsForTrackingAsync(

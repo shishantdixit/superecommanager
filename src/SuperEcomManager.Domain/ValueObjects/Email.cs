@@ -7,7 +7,13 @@ namespace SuperEcomManager.Domain.ValueObjects;
 /// </summary>
 public sealed partial class Email : IEquatable<Email>
 {
-    public string Value { get; }
+    public string Value { get; private set; }
+
+    // Required for EF Core
+    private Email()
+    {
+        Value = string.Empty;
+    }
 
     public Email(string value)
     {

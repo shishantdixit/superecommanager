@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SuperEcomManager.Application.Common.Interfaces;
 using SuperEcomManager.Domain.Enums;
+using SuperEcomManager.Infrastructure.Persistence;
 
 namespace SuperEcomManager.Infrastructure.BackgroundJobs;
 
@@ -26,41 +27,94 @@ public class NdrFollowUpJob : IBackgroundJob
     {
         var settings = args as NdrFollowUpJobArgs ?? new NdrFollowUpJobArgs();
 
-        _logger.LogInformation("Starting NDR follow-up job");
+        _logger.LogDebug("Starting NDR follow-up job");
 
         try
         {
+            // Get all active tenants from shared database
             using var scope = _serviceProvider.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<ITenantDbContext>();
-            var webhookDispatcher = scope.ServiceProvider.GetRequiredService<IWebhookDispatcher>();
+            var appDbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
-            var processedCount = 0;
+            var tenants = await appDbContext.Tenants
+                .AsNoTracking()
+                .Where(t => t.Status == Domain.Enums.TenantStatus.Active)
+                .Select(t => new { t.Id, t.SchemaName, t.Slug })
+                .ToListAsync(cancellationToken);
 
-            // Process overdue follow-ups
-            var overdueNdrs = await GetOverdueNdrsAsync(dbContext, cancellationToken);
-            foreach (var ndr in overdueNdrs)
+            if (tenants.Count == 0)
             {
-                await ProcessOverdueNdrAsync(dbContext, webhookDispatcher, ndr, cancellationToken);
-                processedCount++;
+                _logger.LogDebug("No active tenants found");
+                return;
             }
 
-            // Process unassigned NDRs that are aging
-            var unassignedNdrs = await GetAgingUnassignedNdrsAsync(dbContext, settings.UnassignedAlertHours, cancellationToken);
-            foreach (var ndr in unassignedNdrs)
+            var totalProcessed = 0;
+
+            // Process NDR follow-ups for each tenant
+            foreach (var tenant in tenants)
             {
-                await EscalateUnassignedNdrAsync(dbContext, webhookDispatcher, ndr, cancellationToken);
-                processedCount++;
+                try
+                {
+                    var processed = await ProcessTenantNdrFollowUpsAsync(
+                        tenant.Id, tenant.SchemaName, tenant.Slug, settings, cancellationToken);
+                    totalProcessed += processed;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "Failed to process NDR follow-ups for tenant {TenantId}", tenant.Id);
+                }
             }
 
-            await dbContext.SaveChangesAsync(cancellationToken);
-
-            _logger.LogInformation("NDR follow-up job completed. Processed {Count} NDR cases", processedCount);
+            if (totalProcessed > 0)
+            {
+                _logger.LogInformation("NDR follow-up job completed. Processed {Count} NDR cases", totalProcessed);
+            }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "NDR follow-up job failed");
             throw;
         }
+    }
+
+    private async Task<int> ProcessTenantNdrFollowUpsAsync(
+        Guid tenantId, string schemaName, string slug, NdrFollowUpJobArgs settings, CancellationToken cancellationToken)
+    {
+        // Create a new scope for this tenant
+        using var tenantScope = _serviceProvider.CreateScope();
+
+        // Set the tenant context
+        var currentTenantService = tenantScope.ServiceProvider.GetRequiredService<ICurrentTenantService>();
+        currentTenantService.SetTenant(tenantId, schemaName, slug);
+
+        var dbContext = tenantScope.ServiceProvider.GetRequiredService<ITenantDbContext>();
+        var webhookDispatcher = tenantScope.ServiceProvider.GetRequiredService<IWebhookDispatcher>();
+
+        var processedCount = 0;
+
+        // Process overdue follow-ups
+        var overdueNdrs = await GetOverdueNdrsAsync(dbContext, cancellationToken);
+        foreach (var ndr in overdueNdrs)
+        {
+            await ProcessOverdueNdrAsync(dbContext, webhookDispatcher, ndr, cancellationToken);
+            processedCount++;
+        }
+
+        // Process unassigned NDRs that are aging
+        var unassignedNdrs = await GetAgingUnassignedNdrsAsync(dbContext, settings.UnassignedAlertHours, cancellationToken);
+        foreach (var ndr in unassignedNdrs)
+        {
+            await EscalateUnassignedNdrAsync(dbContext, webhookDispatcher, ndr, cancellationToken);
+            processedCount++;
+        }
+
+        if (processedCount > 0)
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            _logger.LogDebug("Processed {Count} NDR cases for tenant {TenantId}", processedCount, tenantId);
+        }
+
+        return processedCount;
     }
 
     private async Task<List<NdrFollowUpItem>> GetOverdueNdrsAsync(

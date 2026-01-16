@@ -5,11 +5,17 @@ namespace SuperEcomManager.Domain.ValueObjects;
 /// </summary>
 public sealed class Money : IEquatable<Money>
 {
-    public decimal Amount { get; }
-    public string Currency { get; }
+    public decimal Amount { get; private set; }
+    public string Currency { get; private set; }
 
     public static Money Zero => new(0, "INR");
     public static Money ZeroUSD => new(0, "USD");
+
+    // Required for EF Core
+    private Money()
+    {
+        Currency = "INR";
+    }
 
     public Money(decimal amount, string currency = "INR")
     {

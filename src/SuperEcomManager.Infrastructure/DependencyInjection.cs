@@ -1,6 +1,8 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
@@ -46,16 +48,26 @@ public static class DependencyInjection
         services.AddDbContext<TenantDbContext>((serviceProvider, options) =>
         {
             var currentTenantService = serviceProvider.GetRequiredService<ICurrentTenantService>();
+            var schemaName = currentTenantService.HasTenant ? currentTenantService.SchemaName : "public";
 
             options.UseNpgsql(
                 configuration.GetConnectionString("DefaultConnection"),
                 npgsqlOptions =>
                 {
+                    // Configure migrations history table to be in the tenant's schema
+                    npgsqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", schemaName);
                     npgsqlOptions.EnableRetryOnFailure(
                         maxRetryCount: 3,
                         maxRetryDelay: TimeSpan.FromSeconds(30),
                         errorCodesToAdd: null);
                 });
+
+            // Use custom model cache key factory to support schema-per-tenant
+            options.ReplaceService<IModelCacheKeyFactory, TenantModelCacheKeyFactory>();
+
+            // Suppress PendingModelChangesWarning to allow migrations to run
+            // This is needed for multi-tenant scenarios where we apply migrations dynamically
+            options.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
         });
 
         // Register interfaces
@@ -185,6 +197,7 @@ public static class DependencyInjection
 
         // Database seeders and migration service
         services.AddScoped<DatabaseSeeder>();
+        services.AddScoped<DevelopmentSeeder>();
         services.AddScoped<TenantSeeder>();
         services.AddScoped<ITenantSeeder>(sp => sp.GetRequiredService<TenantSeeder>());
         services.AddScoped<IMigrationService, MigrationService>();

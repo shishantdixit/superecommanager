@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SuperEcomManager.Application.Common.Interfaces;
 using SuperEcomManager.Domain.Enums;
+using SuperEcomManager.Infrastructure.Persistence;
 
 namespace SuperEcomManager.Infrastructure.BackgroundJobs;
 
@@ -26,75 +27,120 @@ public class StockAlertJob : IBackgroundJob
     {
         var settings = args as StockAlertJobArgs ?? new StockAlertJobArgs();
 
-        _logger.LogInformation("Starting stock alert job");
+        _logger.LogDebug("Starting stock alert job");
 
         try
         {
+            // Get all active tenants from shared database
             using var scope = _serviceProvider.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<ITenantDbContext>();
-            var webhookDispatcher = scope.ServiceProvider.GetRequiredService<IWebhookDispatcher>();
+            var appDbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
-            // Check for low stock items using inventory locations
-            var lowStockItems = await GetLowStockItemsAsync(dbContext, settings.DefaultLowStockThreshold, cancellationToken);
+            var tenants = await appDbContext.Tenants
+                .AsNoTracking()
+                .Where(t => t.Status == Domain.Enums.TenantStatus.Active)
+                .Select(t => new { t.Id, t.SchemaName, t.Slug })
+                .ToListAsync(cancellationToken);
 
-            if (lowStockItems.Count > 0)
+            if (tenants.Count == 0)
             {
-                _logger.LogInformation("Found {Count} low stock items", lowStockItems.Count);
-
-                // Dispatch individual alerts for critical items
-                foreach (var item in lowStockItems.Where(i => i.Quantity <= 0))
-                {
-                    await webhookDispatcher.DispatchAsync(
-                        WebhookEvent.InventoryOutOfStock,
-                        new
-                        {
-                            ProductId = item.ProductId,
-                            Sku = item.Sku,
-                            ProductName = item.ProductName,
-                            Location = item.Location,
-                            CurrentStock = item.Quantity,
-                            ReorderLevel = item.ReorderLevel
-                        },
-                        cancellationToken);
-                }
-
-                // Dispatch summary alert for low stock
-                var lowStockSummary = lowStockItems
-                    .Where(i => i.Quantity > 0)
-                    .Take(20)
-                    .ToList();
-
-                if (lowStockSummary.Count > 0)
-                {
-                    await webhookDispatcher.DispatchAsync(
-                        WebhookEvent.InventoryLow,
-                        new
-                        {
-                            TotalLowStockItems = lowStockItems.Count(i => i.Quantity > 0),
-                            Items = lowStockSummary.Select(i => new
-                            {
-                                ProductId = i.ProductId,
-                                Sku = i.Sku,
-                                ProductName = i.ProductName,
-                                CurrentStock = i.Quantity,
-                                ReorderLevel = i.ReorderLevel
-                            })
-                        },
-                        cancellationToken);
-                }
-            }
-            else
-            {
-                _logger.LogDebug("No low stock items found");
+                _logger.LogDebug("No active tenants found");
+                return;
             }
 
-            _logger.LogInformation("Stock alert job completed");
+            var totalLowStockItems = 0;
+
+            // Process stock alerts for each tenant
+            foreach (var tenant in tenants)
+            {
+                try
+                {
+                    var lowStockCount = await ProcessTenantStockAlertsAsync(
+                        tenant.Id, tenant.SchemaName, tenant.Slug, settings, cancellationToken);
+                    totalLowStockItems += lowStockCount;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "Failed to process stock alerts for tenant {TenantId}", tenant.Id);
+                }
+            }
+
+            if (totalLowStockItems > 0)
+            {
+                _logger.LogInformation("Stock alert job completed. Total low stock items: {Count}", totalLowStockItems);
+            }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Stock alert job failed");
             throw;
         }
+    }
+
+    private async Task<int> ProcessTenantStockAlertsAsync(
+        Guid tenantId, string schemaName, string slug, StockAlertJobArgs settings, CancellationToken cancellationToken)
+    {
+        // Create a new scope for this tenant
+        using var tenantScope = _serviceProvider.CreateScope();
+
+        // Set the tenant context
+        var currentTenantService = tenantScope.ServiceProvider.GetRequiredService<ICurrentTenantService>();
+        currentTenantService.SetTenant(tenantId, schemaName, slug);
+
+        var dbContext = tenantScope.ServiceProvider.GetRequiredService<ITenantDbContext>();
+        var webhookDispatcher = tenantScope.ServiceProvider.GetRequiredService<IWebhookDispatcher>();
+
+        // Check for low stock items using inventory locations
+        var lowStockItems = await GetLowStockItemsAsync(dbContext, settings.DefaultLowStockThreshold, cancellationToken);
+
+        if (lowStockItems.Count > 0)
+        {
+            _logger.LogDebug("Found {Count} low stock items for tenant {TenantId}", lowStockItems.Count, tenantId);
+
+            // Dispatch individual alerts for critical items
+            foreach (var item in lowStockItems.Where(i => i.Quantity <= 0))
+            {
+                await webhookDispatcher.DispatchAsync(
+                    WebhookEvent.InventoryOutOfStock,
+                    new
+                    {
+                        ProductId = item.ProductId,
+                        Sku = item.Sku,
+                        ProductName = item.ProductName,
+                        Location = item.Location,
+                        CurrentStock = item.Quantity,
+                        ReorderLevel = item.ReorderLevel
+                    },
+                    cancellationToken);
+            }
+
+            // Dispatch summary alert for low stock
+            var lowStockSummary = lowStockItems
+                .Where(i => i.Quantity > 0)
+                .Take(20)
+                .ToList();
+
+            if (lowStockSummary.Count > 0)
+            {
+                await webhookDispatcher.DispatchAsync(
+                    WebhookEvent.InventoryLow,
+                    new
+                    {
+                        TotalLowStockItems = lowStockItems.Count(i => i.Quantity > 0),
+                        Items = lowStockSummary.Select(i => new
+                        {
+                            ProductId = i.ProductId,
+                            Sku = i.Sku,
+                            ProductName = i.ProductName,
+                            CurrentStock = i.Quantity,
+                            ReorderLevel = i.ReorderLevel
+                        })
+                    },
+                    cancellationToken);
+            }
+        }
+
+        return lowStockItems.Count;
     }
 
     private async Task<List<LowStockItem>> GetLowStockItemsAsync(

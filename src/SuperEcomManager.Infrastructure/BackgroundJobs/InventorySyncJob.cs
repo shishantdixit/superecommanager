@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SuperEcomManager.Application.Common.Interfaces;
+using SuperEcomManager.Infrastructure.Persistence;
 
 namespace SuperEcomManager.Infrastructure.BackgroundJobs;
 
@@ -25,57 +26,111 @@ public class InventorySyncJob : IBackgroundJob
     {
         var jobArgs = args as InventorySyncJobArgs;
 
-        _logger.LogInformation("Starting inventory sync job");
+        _logger.LogDebug("Starting inventory sync job");
 
         try
         {
+            // Get all active tenants from shared database
             using var scope = _serviceProvider.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<ITenantDbContext>();
+            var appDbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
-            // Get products with low stock that need syncing
-            var lowStockProducts = await dbContext.Inventory
+            var tenants = await appDbContext.Tenants
                 .AsNoTracking()
-                .Include(i => i.Product)
-                .Where(i => i.QuantityOnHand - i.QuantityReserved <= i.ReorderPoint)
+                .Where(t => t.Status == Domain.Enums.TenantStatus.Active)
+                .Select(t => new { t.Id, t.SchemaName, t.Slug })
                 .ToListAsync(cancellationToken);
 
-            if (lowStockProducts.Count > 0)
+            if (tenants.Count == 0)
             {
-                _logger.LogWarning("{Count} products are at or below reorder point", lowStockProducts.Count);
-
-                // In production, this would:
-                // 1. Send low stock alerts
-                // 2. Sync inventory to connected sales channels
-                // 3. Potentially trigger auto-reorder if configured
+                _logger.LogDebug("No active tenants found");
+                return;
             }
 
-            // Get active sales channels
-            var activeChannels = await dbContext.SalesChannels
-                .AsNoTracking()
-                .Where(c => c.IsActive)
-                .ToListAsync(cancellationToken);
+            var totalChannelsSynced = 0;
 
-            _logger.LogInformation("Syncing inventory to {ChannelCount} active channels", activeChannels.Count);
-
-            foreach (var channel in activeChannels)
+            // Process inventory sync for each tenant
+            foreach (var tenant in tenants)
             {
                 try
                 {
-                    await SyncChannelInventoryAsync(channel.Id, cancellationToken);
+                    var channelsSynced = await ProcessTenantInventorySyncAsync(
+                        tenant.Id, tenant.SchemaName, tenant.Slug, jobArgs, cancellationToken);
+                    totalChannelsSynced += channelsSynced;
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to sync inventory for channel {ChannelId}", channel.Id);
+                    _logger.LogWarning(ex,
+                        "Failed to process inventory sync for tenant {TenantId}", tenant.Id);
                 }
             }
 
-            _logger.LogInformation("Inventory sync job completed successfully");
+            if (totalChannelsSynced > 0)
+            {
+                _logger.LogInformation("Inventory sync job completed. Synced {Count} channels", totalChannelsSynced);
+            }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Inventory sync job failed");
             throw;
         }
+    }
+
+    private async Task<int> ProcessTenantInventorySyncAsync(
+        Guid tenantId, string schemaName, string slug, InventorySyncJobArgs? jobArgs, CancellationToken cancellationToken)
+    {
+        // Create a new scope for this tenant
+        using var tenantScope = _serviceProvider.CreateScope();
+
+        // Set the tenant context
+        var currentTenantService = tenantScope.ServiceProvider.GetRequiredService<ICurrentTenantService>();
+        currentTenantService.SetTenant(tenantId, schemaName, slug);
+
+        var dbContext = tenantScope.ServiceProvider.GetRequiredService<ITenantDbContext>();
+
+        // Get products with low stock that need syncing
+        var lowStockProducts = await dbContext.Inventory
+            .AsNoTracking()
+            .Include(i => i.Product)
+            .Where(i => i.QuantityOnHand - i.QuantityReserved <= i.ReorderPoint)
+            .ToListAsync(cancellationToken);
+
+        if (lowStockProducts.Count > 0)
+        {
+            _logger.LogDebug("{Count} products are at or below reorder point for tenant {TenantId}",
+                lowStockProducts.Count, tenantId);
+
+            // In production, this would:
+            // 1. Send low stock alerts
+            // 2. Sync inventory to connected sales channels
+            // 3. Potentially trigger auto-reorder if configured
+        }
+
+        // Get active sales channels
+        var activeChannels = await dbContext.SalesChannels
+            .AsNoTracking()
+            .Where(c => c.IsActive)
+            .ToListAsync(cancellationToken);
+
+        if (activeChannels.Count > 0)
+        {
+            _logger.LogDebug("Syncing inventory to {ChannelCount} active channels for tenant {TenantId}",
+                activeChannels.Count, tenantId);
+        }
+
+        foreach (var channel in activeChannels)
+        {
+            try
+            {
+                await SyncChannelInventoryAsync(channel.Id, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to sync inventory for channel {ChannelId}", channel.Id);
+            }
+        }
+
+        return activeChannels.Count;
     }
 
     private Task SyncChannelInventoryAsync(Guid channelId, CancellationToken cancellationToken)

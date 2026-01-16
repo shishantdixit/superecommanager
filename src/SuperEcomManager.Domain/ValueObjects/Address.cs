@@ -5,14 +5,25 @@ namespace SuperEcomManager.Domain.ValueObjects;
 /// </summary>
 public sealed class Address : IEquatable<Address>
 {
-    public string Name { get; }
-    public string? Phone { get; }
-    public string Line1 { get; }
-    public string? Line2 { get; }
-    public string City { get; }
-    public string State { get; }
-    public string PostalCode { get; }
-    public string Country { get; }
+    public string Name { get; private set; }
+    public string? Phone { get; private set; }
+    public string Line1 { get; private set; }
+    public string? Line2 { get; private set; }
+    public string City { get; private set; }
+    public string State { get; private set; }
+    public string PostalCode { get; private set; }
+    public string Country { get; private set; }
+
+    // Required for EF Core
+    private Address()
+    {
+        Name = string.Empty;
+        Line1 = string.Empty;
+        City = string.Empty;
+        State = string.Empty;
+        PostalCode = string.Empty;
+        Country = "India";
+    }
 
     public Address(
         string name,
