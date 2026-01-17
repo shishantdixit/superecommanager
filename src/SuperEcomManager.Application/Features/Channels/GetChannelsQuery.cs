@@ -36,7 +36,17 @@ public class GetChannelsQueryHandler : IRequestHandler<GetChannelsQuery, IReadOn
                 LastSyncAt = c.LastSyncAt,
                 TotalOrders = _dbContext.Orders.Count(o => o.ChannelId == c.Id),
                 SyncStatus = c.LastSyncAt.HasValue ? ChannelSyncStatus.Completed : ChannelSyncStatus.NotStarted,
-                CreatedAt = c.CreatedAt
+                CreatedAt = c.CreatedAt,
+                AutoSyncOrders = c.AutoSyncOrders,
+                AutoSyncInventory = c.AutoSyncInventory,
+                IsConnected = c.IsConnected,
+                HasCredentials = c.ApiKey != null,
+                LastError = c.LastError,
+                InitialSyncDays = c.InitialSyncDays,
+                SyncProductsEnabled = c.SyncProductsEnabled,
+                AutoSyncProducts = c.AutoSyncProducts,
+                LastProductSyncAt = c.LastProductSyncAt,
+                LastInventorySyncAt = c.LastInventorySyncAt
             })
             .OrderByDescending(c => c.CreatedAt)
             .ToListAsync(cancellationToken);

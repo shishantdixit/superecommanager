@@ -27,7 +27,7 @@ public class ShopifyOrderMapper
             customerName: customerName,
             shippingAddress: shippingAddress,
             totalAmount: totalAmount,
-            orderDate: shopifyOrder.CreatedAt,
+            orderDate: ToUtc(shopifyOrder.CreatedAt),
             externalOrderNumber: shopifyOrder.Name
         );
 
@@ -267,5 +267,18 @@ public class ShopifyOrderMapper
             return 0;
 
         return decimal.TryParse(value, out var result) ? result : 0;
+    }
+
+    /// <summary>
+    /// Converts a DateTime to UTC. PostgreSQL requires UTC timestamps.
+    /// </summary>
+    private static DateTime ToUtc(DateTime dateTime)
+    {
+        return dateTime.Kind switch
+        {
+            DateTimeKind.Utc => dateTime,
+            DateTimeKind.Local => dateTime.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(dateTime, DateTimeKind.Utc) // Assume Unspecified is UTC
+        };
     }
 }

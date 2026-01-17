@@ -32,6 +32,9 @@ public static class DatabaseInitializationExtensions
             // Apply tenant migrations for all existing tenants
             await ApplyTenantMigrationsAsync(services, appDbContext, logger);
 
+            // Apply any pending schema updates (for existing tenants that can't run full migrations)
+            await ApplyPendingSchemaUpdatesAsync(services, appDbContext, logger);
+
             // Seed shared data
             var seeder = services.GetRequiredService<DatabaseSeeder>();
             await seeder.SeedSharedDataAsync();
@@ -116,6 +119,100 @@ public static class DatabaseInitializationExtensions
         }
 
         logger.LogInformation("Tenant migrations completed");
+    }
+
+    /// <summary>
+    /// Applies pending schema updates to existing tenant schemas.
+    /// This handles cases where full migrations can't run (e.g., due to extension dependencies).
+    /// </summary>
+    private static async Task ApplyPendingSchemaUpdatesAsync(
+        IServiceProvider services,
+        ApplicationDbContext appDbContext,
+        ILogger logger)
+    {
+        var tenants = await appDbContext.Tenants
+            .AsNoTracking()
+            .Where(t => t.Status == Domain.Enums.TenantStatus.Active ||
+                       t.Status == Domain.Enums.TenantStatus.Pending)
+            .Select(t => new { t.Id, t.SchemaName, t.Slug })
+            .ToListAsync();
+
+        if (tenants.Count == 0)
+        {
+            return;
+        }
+
+        logger.LogInformation("Checking for pending schema updates in {Count} tenant schemas...", tenants.Count);
+
+        // SQL to add Shopify credential columns if they don't exist
+        const string addShopifyCredentialsSql = @"
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = '{0}' AND table_name = 'sales_channels' AND column_name = 'AccessToken') THEN
+                    ALTER TABLE ""{0}"".sales_channels ADD COLUMN ""AccessToken"" text;
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = '{0}' AND table_name = 'sales_channels' AND column_name = 'ApiKey') THEN
+                    ALTER TABLE ""{0}"".sales_channels ADD COLUMN ""ApiKey"" text;
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = '{0}' AND table_name = 'sales_channels' AND column_name = 'ApiSecret') THEN
+                    ALTER TABLE ""{0}"".sales_channels ADD COLUMN ""ApiSecret"" text;
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = '{0}' AND table_name = 'sales_channels' AND column_name = 'IsConnected') THEN
+                    ALTER TABLE ""{0}"".sales_channels ADD COLUMN ""IsConnected"" boolean NOT NULL DEFAULT false;
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = '{0}' AND table_name = 'sales_channels' AND column_name = 'LastConnectedAt') THEN
+                    ALTER TABLE ""{0}"".sales_channels ADD COLUMN ""LastConnectedAt"" timestamp with time zone;
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = '{0}' AND table_name = 'sales_channels' AND column_name = 'LastError') THEN
+                    ALTER TABLE ""{0}"".sales_channels ADD COLUMN ""LastError"" text;
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = '{0}' AND table_name = 'sales_channels' AND column_name = 'Scopes') THEN
+                    ALTER TABLE ""{0}"".sales_channels ADD COLUMN ""Scopes"" text;
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = '{0}' AND table_name = 'sales_channels' AND column_name = 'InitialSyncDays') THEN
+                    ALTER TABLE ""{0}"".sales_channels ADD COLUMN ""InitialSyncDays"" integer DEFAULT 7;
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = '{0}' AND table_name = 'sales_channels' AND column_name = 'SyncProductsEnabled') THEN
+                    ALTER TABLE ""{0}"".sales_channels ADD COLUMN ""SyncProductsEnabled"" boolean NOT NULL DEFAULT false;
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = '{0}' AND table_name = 'sales_channels' AND column_name = 'AutoSyncProducts') THEN
+                    ALTER TABLE ""{0}"".sales_channels ADD COLUMN ""AutoSyncProducts"" boolean NOT NULL DEFAULT false;
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = '{0}' AND table_name = 'sales_channels' AND column_name = 'LastProductSyncAt') THEN
+                    ALTER TABLE ""{0}"".sales_channels ADD COLUMN ""LastProductSyncAt"" timestamp with time zone;
+                END IF;
+
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = '{0}' AND table_name = 'sales_channels' AND column_name = 'LastInventorySyncAt') THEN
+                    ALTER TABLE ""{0}"".sales_channels ADD COLUMN ""LastInventorySyncAt"" timestamp with time zone;
+                END IF;
+            END $$;
+        ";
+
+        foreach (var tenant in tenants)
+        {
+            try
+            {
+                var sql = string.Format(addShopifyCredentialsSql, tenant.SchemaName);
+                await appDbContext.Database.ExecuteSqlRawAsync(sql);
+                logger.LogDebug("Applied schema updates for tenant {Schema}", tenant.SchemaName);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to apply schema updates for tenant {Schema}", tenant.SchemaName);
+            }
+        }
+
+        logger.LogInformation("Pending schema updates applied");
     }
 
     /// <summary>

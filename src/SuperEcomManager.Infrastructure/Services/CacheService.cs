@@ -75,4 +75,35 @@ public class CacheService : ICacheService
 
         return $"global:{key}";
     }
+
+    private static string GetGlobalKey(string key) => $"global:{key}";
+
+    public async Task<T?> GetGlobalAsync<T>(string key, CancellationToken cancellationToken = default) where T : class
+    {
+        var globalKey = GetGlobalKey(key);
+        var data = await _cache.GetStringAsync(globalKey, cancellationToken);
+
+        if (string.IsNullOrEmpty(data))
+            return default;
+
+        return JsonSerializer.Deserialize<T>(data);
+    }
+
+    public async Task SetGlobalAsync<T>(string key, T value, TimeSpan? expiration = null, CancellationToken cancellationToken = default) where T : class
+    {
+        var globalKey = GetGlobalKey(key);
+        var options = new DistributedCacheEntryOptions
+        {
+            AbsoluteExpirationRelativeToNow = expiration ?? TimeSpan.FromMinutes(30)
+        };
+
+        var data = JsonSerializer.Serialize(value);
+        await _cache.SetStringAsync(globalKey, data, options, cancellationToken);
+    }
+
+    public async Task RemoveGlobalAsync(string key, CancellationToken cancellationToken = default)
+    {
+        var globalKey = GetGlobalKey(key);
+        await _cache.RemoveAsync(globalKey, cancellationToken);
+    }
 }

@@ -1,0 +1,694 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams, useParams } from 'next/navigation';
+import Link from 'next/link';
+import { DashboardLayout } from '@/components/layout';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Button,
+  Input,
+  Badge,
+  SectionLoader,
+  Modal,
+} from '@/components/ui';
+import { formatDateTime } from '@/lib/utils';
+import { useChannels, useConnectShopify, useDisconnectChannel, useSyncChannel, useUpdateChannelSettings } from '@/hooks';
+import type { Channel } from '@/services/channels.service';
+import {
+  Store,
+  ArrowLeft,
+  RefreshCw,
+  Trash2,
+  ExternalLink,
+  CheckCircle,
+  AlertCircle,
+  Clock,
+  Loader2,
+  Settings,
+  ShoppingCart,
+  Package,
+  Zap,
+  Shield,
+} from 'lucide-react';
+
+export default function ChannelSettingsPage() {
+  const router = useRouter();
+  const params = useParams();
+  const searchParams = useSearchParams();
+  const channelId = params.id as string;
+  const connected = searchParams.get('connected');
+  const error = searchParams.get('error');
+
+  // Settings state
+  const [showDisconnectModal, setShowDisconnectModal] = useState(false);
+  const [autoSyncOrders, setAutoSyncOrders] = useState(true);
+  const [autoSyncInventory, setAutoSyncInventory] = useState(false);
+  const [initialSyncDays, setInitialSyncDays] = useState<number | null>(7);
+  const [syncProductsEnabled, setSyncProductsEnabled] = useState(false);
+  const [autoSyncProducts, setAutoSyncProducts] = useState(false);
+  const [settingsChanged, setSettingsChanged] = useState(false);
+
+  const { data: channels, isLoading, refetch } = useChannels();
+  const connectShopify = useConnectShopify();
+  const disconnectChannel = useDisconnectChannel();
+  const syncChannel = useSyncChannel();
+  const updateSettings = useUpdateChannelSettings();
+
+  // Find the specific channel by ID
+  const channel = channels?.find(c => c.id === channelId);
+
+  // Update local state when channel data loads
+  useEffect(() => {
+    if (channel) {
+      setAutoSyncOrders(channel.autoSyncOrders ?? true);
+      setAutoSyncInventory(channel.autoSyncInventory ?? false);
+      setInitialSyncDays(channel.initialSyncDays ?? 7);
+      setSyncProductsEnabled(channel.syncProductsEnabled ?? false);
+      setAutoSyncProducts(channel.autoSyncProducts ?? false);
+    }
+  }, [channel]);
+
+  // Refetch on mount and when connected param changes
+  useEffect(() => {
+    if (connected) {
+      refetch();
+    }
+  }, [connected, refetch]);
+
+  const handleConnect = async () => {
+    if (!channel) return;
+
+    try {
+      const result = await connectShopify.mutateAsync(channel.id);
+      window.location.href = result.authorizationUrl;
+    } catch (err) {
+      console.error('Failed to initiate Shopify connection:', err);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    if (!channel) return;
+
+    try {
+      await disconnectChannel.mutateAsync(channel.id);
+      setShowDisconnectModal(false);
+      router.push('/channels');
+    } catch (err) {
+      console.error('Failed to disconnect channel:', err);
+    }
+  };
+
+  const handleSync = async () => {
+    if (!channel) return;
+
+    try {
+      await syncChannel.mutateAsync(channel.id);
+    } catch (err) {
+      console.error('Failed to sync:', err);
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    if (!channel) return;
+
+    try {
+      await updateSettings.mutateAsync({
+        id: channel.id,
+        autoSyncOrders,
+        autoSyncInventory,
+        initialSyncDays,
+        syncProductsEnabled,
+        autoSyncProducts,
+      });
+      setSettingsChanged(false);
+    } catch (err) {
+      console.error('Failed to update settings:', err);
+    }
+  };
+
+  const handleSettingChange = (setting: 'orders' | 'inventory' | 'syncProducts' | 'autoSyncProducts', value: boolean) => {
+    if (setting === 'orders') {
+      setAutoSyncOrders(value);
+    } else if (setting === 'inventory') {
+      setAutoSyncInventory(value);
+    } else if (setting === 'syncProducts') {
+      setSyncProductsEnabled(value);
+    } else if (setting === 'autoSyncProducts') {
+      setAutoSyncProducts(value);
+    }
+    setSettingsChanged(true);
+  };
+
+  const handleInitialSyncDaysChange = (value: number | null) => {
+    setInitialSyncDays(value);
+    setSettingsChanged(true);
+  };
+
+  if (isLoading) {
+    return (
+      <DashboardLayout title="Channel Settings">
+        <SectionLoader />
+      </DashboardLayout>
+    );
+  }
+
+  if (!channel) {
+    return (
+      <DashboardLayout title="Channel Not Found">
+        <div className="text-center py-12">
+          <AlertCircle className="h-12 w-12 text-error mx-auto mb-4" />
+          <h2 className="text-lg font-medium">Channel not found</h2>
+          <p className="text-muted-foreground mt-2">The channel you're looking for doesn't exist.</p>
+          <Link href="/channels">
+            <Button className="mt-4">Back to Channels</Button>
+          </Link>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  // Determine which view to show based on channel state
+  const hasCredentials = channel.hasCredentials ?? false;
+  const isConnected = channel.isConnected ?? false;
+
+  return (
+    <DashboardLayout title={`${channel.type} Settings`}>
+      {/* Back Link */}
+      <Link
+        href="/channels"
+        className="mb-4 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back to Channels
+      </Link>
+
+      {/* Success/Error Messages */}
+      {connected && (
+        <div className="mb-4 flex items-center gap-2 rounded-lg bg-success/10 p-4 text-success">
+          <CheckCircle className="h-5 w-5" />
+          <span>{channel.type} store connected successfully!</span>
+        </div>
+      )}
+      {error && (
+        <div className="mb-4 flex items-center gap-2 rounded-lg bg-error/10 p-4 text-error">
+          <AlertCircle className="h-5 w-5" />
+          <span>{decodeURIComponent(error)}</span>
+        </div>
+      )}
+      {channel.lastError && !connected && (
+        <div className="mb-4 flex items-center gap-2 rounded-lg bg-warning/10 p-4 text-warning">
+          <AlertCircle className="h-5 w-5" />
+          <span>Last connection error: {channel.lastError}</span>
+        </div>
+      )}
+
+      {isConnected ? (
+        // Connected State - Show full settings
+        <ConnectedView
+          channel={channel}
+          autoSyncOrders={autoSyncOrders}
+          autoSyncInventory={autoSyncInventory}
+          initialSyncDays={initialSyncDays}
+          syncProductsEnabled={syncProductsEnabled}
+          autoSyncProducts={autoSyncProducts}
+          settingsChanged={settingsChanged}
+          onSettingChange={handleSettingChange}
+          onInitialSyncDaysChange={handleInitialSyncDaysChange}
+          onSaveSettings={handleSaveSettings}
+          onSync={handleSync}
+          onDisconnect={() => setShowDisconnectModal(true)}
+          isSaving={updateSettings.isPending}
+          isSyncing={syncChannel.isPending}
+        />
+      ) : hasCredentials ? (
+        // Has credentials but not connected - Show connect button
+        <CredentialsSavedView
+          channel={channel}
+          onConnect={handleConnect}
+          onDisconnect={() => setShowDisconnectModal(true)}
+          isConnecting={connectShopify.isPending}
+        />
+      ) : (
+        // No credentials - Redirect to type-specific setup page
+        <NoCredentialsView channel={channel} />
+      )}
+
+      {/* Disconnect Confirmation Modal */}
+      <Modal
+        isOpen={showDisconnectModal}
+        onClose={() => setShowDisconnectModal(false)}
+        title={`Disconnect ${channel.type} Store`}
+      >
+        <div className="space-y-4">
+          <div className="rounded-lg bg-error/10 p-4">
+            <p className="text-sm text-error">
+              <strong>Warning:</strong> This action will:
+            </p>
+            <ul className="mt-2 list-inside list-disc text-sm text-error">
+              <li>Stop all automatic order syncing</li>
+              <li>Remove all webhooks from your store</li>
+              <li>Clear the stored access credentials</li>
+            </ul>
+          </div>
+          <p className="text-muted-foreground">
+            Your existing orders will not be deleted. You can reconnect your store at any time.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowDisconnectModal(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={handleDisconnect}
+              disabled={disconnectChannel.isPending}
+              leftIcon={disconnectChannel.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+            >
+              {disconnectChannel.isPending ? 'Disconnecting...' : 'Yes, Disconnect'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </DashboardLayout>
+  );
+}
+
+// No Credentials View - Redirect to setup
+function NoCredentialsView({ channel }: { channel: Channel }) {
+  const router = useRouter();
+
+  useEffect(() => {
+    // Redirect to type-specific setup page
+    if (channel.type === 'Shopify') {
+      router.push('/channels/shopify');
+    }
+  }, [channel.type, router]);
+
+  return (
+    <Card>
+      <CardContent className="py-12 text-center">
+        <AlertCircle className="h-12 w-12 text-warning mx-auto mb-4" />
+        <h3 className="text-lg font-medium">Setup Required</h3>
+        <p className="text-muted-foreground mt-2">
+          This channel needs to be configured before it can be used.
+        </p>
+        {channel.type === 'Shopify' && (
+          <Link href="/channels/shopify">
+            <Button className="mt-4">Configure Shopify</Button>
+          </Link>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Credentials Saved View - Step 2: Initiate OAuth
+function CredentialsSavedView({
+  channel,
+  onConnect,
+  onDisconnect,
+  isConnecting,
+}: {
+  channel: Channel;
+  onConnect: () => void;
+  onDisconnect: () => void;
+  isConnecting: boolean;
+}) {
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-yellow-100">
+              <Store className="h-6 w-6 text-yellow-700" />
+            </div>
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                {channel.storeName || channel.name}
+                <Badge variant="warning" size="sm">Credentials Saved</Badge>
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Complete the OAuth connection to start syncing orders
+              </p>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="rounded-lg border border-warning/30 bg-warning/10 p-4">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium text-warning">OAuth Connection Required</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Your API credentials have been saved. Click the button below to connect to {channel.type}
+                  and authorize access to your store.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-4 sm:flex-row">
+            <Button
+              onClick={onConnect}
+              disabled={isConnecting}
+              leftIcon={
+                isConnecting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ExternalLink className="h-4 w-4" />
+                )
+              }
+              size="lg"
+            >
+              {isConnecting ? 'Connecting...' : `Connect to ${channel.type}`}
+            </Button>
+            <Button variant="outline" onClick={onDisconnect}>
+              <Trash2 className="h-4 w-4 mr-2" />
+              Remove Credentials
+            </Button>
+          </div>
+
+          <div className="rounded-lg bg-muted/50 p-4">
+            <h4 className="mb-2 font-medium">What happens next?</h4>
+            <ul className="space-y-1 text-sm text-muted-foreground">
+              <li>• You&apos;ll be redirected to {channel.type} to log in</li>
+              <li>• Review and approve the requested permissions</li>
+              <li>• You&apos;ll be redirected back here once connected</li>
+            </ul>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// Connected View - Full settings
+function ConnectedView({
+  channel,
+  autoSyncOrders,
+  autoSyncInventory,
+  initialSyncDays,
+  syncProductsEnabled,
+  autoSyncProducts,
+  settingsChanged,
+  onSettingChange,
+  onInitialSyncDaysChange,
+  onSaveSettings,
+  onSync,
+  onDisconnect,
+  isSaving,
+  isSyncing,
+}: {
+  channel: Channel;
+  autoSyncOrders: boolean;
+  autoSyncInventory: boolean;
+  initialSyncDays: number | null;
+  syncProductsEnabled: boolean;
+  autoSyncProducts: boolean;
+  settingsChanged: boolean;
+  onSettingChange: (setting: 'orders' | 'inventory' | 'syncProducts' | 'autoSyncProducts', value: boolean) => void;
+  onInitialSyncDaysChange: (value: number | null) => void;
+  onSaveSettings: () => void;
+  onSync: () => void;
+  onDisconnect: () => void;
+  isSaving: boolean;
+  isSyncing: boolean;
+}) {
+  return (
+    <div className="space-y-6">
+      {/* Connection Status Card */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-green-100">
+              <Store className="h-6 w-6 text-green-700" />
+            </div>
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                {channel.storeName || channel.name}
+                <Badge variant="success" size="sm">Connected</Badge>
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                {channel.storeUrl}
+              </p>
+            </div>
+          </div>
+          {channel.storeUrl && (
+            <a
+              href={`https://${channel.storeUrl.replace('https://', '')}/admin`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 text-sm text-primary hover:underline"
+            >
+              <ExternalLink className="h-4 w-4" />
+              Open Admin
+            </a>
+          )}
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 md:grid-cols-4">
+            <div className="flex items-center gap-3 rounded-lg border p-3">
+              <ShoppingCart className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <p className="text-sm text-muted-foreground">Total Orders</p>
+                <p className="text-lg font-semibold">{channel.totalOrders.toLocaleString()}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-lg border p-3">
+              <Clock className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <p className="text-sm text-muted-foreground">Last Sync</p>
+                <p className="text-lg font-semibold">
+                  {channel.lastSyncAt ? formatDateTime(channel.lastSyncAt) : 'Never'}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-lg border p-3">
+              <SyncStatusIcon status={channel.syncStatus} />
+              <div>
+                <p className="text-sm text-muted-foreground">Sync Status</p>
+                <p className="text-lg font-semibold capitalize">
+                  {channel.syncStatus === 'NotStarted' ? 'Not Started' : channel.syncStatus}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-lg border p-3">
+              <Package className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <p className="text-sm text-muted-foreground">Connected Since</p>
+                <p className="text-lg font-semibold">{formatDateTime(channel.createdAt)}</p>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Sync Settings Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Settings className="h-5 w-5" />
+            Sync Settings
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Initial Sync Range */}
+          <div className="flex items-center justify-between rounded-lg border p-4">
+            <div className="flex items-center gap-3">
+              <Clock className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <p className="font-medium">Order Sync Range</p>
+                <p className="text-sm text-muted-foreground">
+                  How far back to fetch orders when syncing
+                </p>
+              </div>
+            </div>
+            <select
+              className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={initialSyncDays === null ? 'all' : initialSyncDays.toString()}
+              onChange={(e) => {
+                const value = e.target.value;
+                onInitialSyncDaysChange(value === 'all' ? null : parseInt(value, 10));
+              }}
+            >
+              <option value="7">Last 7 days</option>
+              <option value="14">Last 14 days</option>
+              <option value="30">Last 30 days</option>
+              <option value="60">Last 60 days</option>
+              <option value="90">Last 90 days</option>
+              <option value="all">All orders</option>
+            </select>
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border p-4">
+            <div className="flex items-center gap-3">
+              <ShoppingCart className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <p className="font-medium">Auto-sync Orders</p>
+                <p className="text-sm text-muted-foreground">
+                  Automatically import new orders via webhooks
+                </p>
+              </div>
+            </div>
+            <label className="relative inline-flex cursor-pointer items-center">
+              <input
+                type="checkbox"
+                className="peer sr-only"
+                checked={autoSyncOrders}
+                onChange={(e) => onSettingChange('orders', e.target.checked)}
+              />
+              <div className="peer h-6 w-11 rounded-full bg-gray-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-primary peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20"></div>
+            </label>
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border p-4">
+            <div className="flex items-center gap-3">
+              <Package className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <p className="font-medium">Auto-sync Inventory</p>
+                <p className="text-sm text-muted-foreground">
+                  Push inventory updates back when stock changes
+                </p>
+              </div>
+            </div>
+            <label className="relative inline-flex cursor-pointer items-center">
+              <input
+                type="checkbox"
+                className="peer sr-only"
+                checked={autoSyncInventory}
+                onChange={(e) => onSettingChange('inventory', e.target.checked)}
+              />
+              <div className="peer h-6 w-11 rounded-full bg-gray-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-primary peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20"></div>
+            </label>
+          </div>
+
+          {settingsChanged && (
+            <div className="flex justify-end">
+              <Button
+                onClick={onSaveSettings}
+                disabled={isSaving}
+                leftIcon={isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : undefined}
+              >
+                {isSaving ? 'Saving...' : 'Save Settings'}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Manual Sync Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <RefreshCw className="h-5 w-5" />
+            Manual Sync
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium">Sync Orders Now</p>
+              <p className="text-sm text-muted-foreground">
+                Manually trigger a sync to import all orders.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              onClick={onSync}
+              disabled={isSyncing}
+              leftIcon={
+                isSyncing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )
+              }
+            >
+              {isSyncing ? 'Syncing...' : 'Sync Now'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Webhooks Info Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Zap className="h-5 w-5" />
+            Webhooks
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-lg bg-muted/50 p-4">
+            <p className="text-sm text-muted-foreground">
+              Webhooks are automatically configured when you connect your store.
+              They enable real-time order updates without manual syncing.
+            </p>
+            <div className="mt-3 space-y-2">
+              <div className="flex items-center gap-2 text-sm">
+                <CheckCircle className="h-4 w-4 text-success" />
+                <span>Order creation webhook</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <CheckCircle className="h-4 w-4 text-success" />
+                <span>Order update webhook</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <CheckCircle className="h-4 w-4 text-success" />
+                <span>Order fulfillment webhook</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <CheckCircle className="h-4 w-4 text-success" />
+                <span>Order cancellation webhook</span>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Danger Zone */}
+      <Card className="border-error/50">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-error">
+            <Shield className="h-5 w-5" />
+            Danger Zone
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium">Disconnect Store</p>
+              <p className="text-sm text-muted-foreground">
+                This will disconnect your store and stop all syncing.
+                Existing orders will not be deleted.
+              </p>
+            </div>
+            <Button
+              variant="danger"
+              onClick={onDisconnect}
+              leftIcon={<Trash2 className="h-4 w-4" />}
+            >
+              Disconnect
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function SyncStatusIcon({ status }: { status: string }) {
+  switch (status) {
+    case 'Completed':
+      return <CheckCircle className="h-5 w-5 text-success" />;
+    case 'InProgress':
+      return <Loader2 className="h-5 w-5 animate-spin text-info" />;
+    case 'Failed':
+      return <AlertCircle className="h-5 w-5 text-error" />;
+    default:
+      return <Clock className="h-5 w-5 text-muted-foreground" />;
+  }
+}

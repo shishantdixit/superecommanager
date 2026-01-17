@@ -40,7 +40,12 @@ public class GetChannelByIdQueryHandler : IRequestHandler<GetChannelByIdQuery, C
                 LastSyncAt = c.LastSyncAt,
                 TotalOrders = _dbContext.Orders.Count(o => o.ChannelId == c.Id),
                 SyncStatus = c.LastSyncAt.HasValue ? ChannelSyncStatus.Completed : ChannelSyncStatus.NotStarted,
-                CreatedAt = c.CreatedAt
+                CreatedAt = c.CreatedAt,
+                AutoSyncOrders = c.AutoSyncOrders,
+                AutoSyncInventory = c.AutoSyncInventory,
+                IsConnected = c.IsConnected,
+                HasCredentials = c.ApiKey != null,
+                LastError = c.LastError
             })
             .FirstOrDefaultAsync(cancellationToken);
 

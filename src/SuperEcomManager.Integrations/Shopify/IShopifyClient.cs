@@ -31,9 +31,14 @@ public interface IShopifyClient
     Task<ShopifyOrder?> GetOrderAsync(string shopDomain, string accessToken, long orderId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Exchanges authorization code for access token.
+    /// Exchanges authorization code for access token using tenant-specific credentials.
     /// </summary>
-    Task<ShopifyAccessTokenResponse?> ExchangeCodeForTokenAsync(string shopDomain, string code, CancellationToken cancellationToken = default);
+    Task<ShopifyAccessTokenResponse?> ExchangeCodeForTokenAsync(
+        string shopDomain,
+        string code,
+        string apiKey,
+        string apiSecret,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Registers a webhook.
@@ -51,12 +56,15 @@ public interface IShopifyClient
     Task<bool> DeleteWebhookAsync(string shopDomain, string accessToken, long webhookId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Generates OAuth authorization URL.
+    /// Generates OAuth authorization URL using tenant-specific credentials.
     /// </summary>
-    string GetAuthorizationUrl(string shopDomain, string redirectUri, string state);
+    string GetAuthorizationUrl(string shopDomain, string redirectUri, string state, string apiKey, string scopes);
 
     /// <summary>
     /// Verifies webhook HMAC signature.
     /// </summary>
-    bool VerifyWebhookSignature(string requestBody, string hmacHeader);
+    /// <param name="requestBody">The request body to verify</param>
+    /// <param name="hmacHeader">The HMAC header from Shopify</param>
+    /// <param name="webhookSecret">Optional tenant-specific webhook secret (falls back to global config)</param>
+    bool VerifyWebhookSignature(string requestBody, string hmacHeader, string? webhookSecret = null);
 }

@@ -12,6 +12,7 @@ using SuperEcomManager.Integrations.Amazon;
 using SuperEcomManager.Integrations.Common;
 using SuperEcomManager.Integrations.Flipkart;
 using SuperEcomManager.Integrations.Meesho;
+using SuperEcomManager.Application.Common.Interfaces;
 using SuperEcomManager.Integrations.Shopify;
 using SuperEcomManager.Integrations.Shopify.Services;
 using SuperEcomManager.Integrations.Shopify.Webhooks;
@@ -40,6 +41,10 @@ public static class DependencyInjection
         services.AddScoped<ShopifyOrderMapper>();
         services.AddScoped<IShopifyOrderSyncService, ShopifyOrderSyncService>();
         services.AddScoped<IShopifyWebhookHandler, ShopifyWebhookHandler>();
+
+        // Register channel sync services
+        services.AddScoped<IChannelSyncService, ShopifyChannelSyncService>();
+        services.AddScoped<IChannelSyncServiceFactory, ChannelSyncServiceFactory>();
 
         // Register Shiprocket settings
         services.Configure<ShiprocketSettings>(configuration.GetSection(ShiprocketSettings.SectionName));

@@ -16,10 +16,39 @@ export interface Channel {
   totalOrders: number;
   syncStatus: ChannelSyncStatus;
   createdAt: string;
+  autoSyncOrders?: boolean;
+  autoSyncInventory?: boolean;
+  // Credential/connection status for OAuth channels
+  isConnected?: boolean;
+  hasCredentials?: boolean;
+  lastError?: string;
+  // Advanced sync settings
+  initialSyncDays?: number | null;
+  syncProductsEnabled?: boolean;
+  autoSyncProducts?: boolean;
+  lastProductSyncAt?: string;
+  lastInventorySyncAt?: string;
+}
+
+export interface UpdateChannelSettingsRequest {
+  autoSyncOrders?: boolean;
+  autoSyncInventory?: boolean;
+  // Advanced sync settings
+  initialSyncDays?: number | null;
+  syncProductsEnabled?: boolean;
+  autoSyncProducts?: boolean;
 }
 
 export interface ConnectShopifyRequest {
   shopDomain: string;
+}
+
+export interface SaveShopifyCredentialsRequest {
+  channelId?: string;
+  apiKey: string;
+  apiSecret: string;
+  shopDomain: string;
+  scopes?: string;
 }
 
 export interface ShopifyOAuthResult {
@@ -53,12 +82,24 @@ export const channelsService = {
   },
 
   /**
-   * Initiate Shopify OAuth connection.
+   * Save Shopify API credentials.
+   * Each tenant must create their own Shopify app and provide credentials here.
    */
-  connectShopify: async (data: ConnectShopifyRequest) => {
-    const response = await post<ApiResponse<ShopifyOAuthResult>, ConnectShopifyRequest>(
-      '/channels/shopify/connect',
+  saveShopifyCredentials: async (data: SaveShopifyCredentialsRequest) => {
+    const response = await post<ApiResponse<Channel>, SaveShopifyCredentialsRequest>(
+      '/channels/shopify/credentials',
       data
+    );
+    return response.data;
+  },
+
+  /**
+   * Initiate Shopify OAuth connection for a channel that has credentials saved.
+   */
+  connectShopify: async (channelId: string) => {
+    const response = await post<ApiResponse<ShopifyOAuthResult>>(
+      `/channels/${channelId}/shopify/connect`,
+      {}
     );
     return response.data;
   },
@@ -75,6 +116,17 @@ export const channelsService = {
    */
   syncChannel: async (id: string) => {
     const response = await post<ApiResponse<ChannelSyncResult>>(`/channels/${id}/sync`, {});
+    return response.data;
+  },
+
+  /**
+   * Update channel settings.
+   */
+  updateChannelSettings: async (id: string, data: UpdateChannelSettingsRequest) => {
+    const response = await post<ApiResponse<Channel>, UpdateChannelSettingsRequest>(
+      `/channels/${id}/settings`,
+      data
+    );
     return response.data;
   },
 };

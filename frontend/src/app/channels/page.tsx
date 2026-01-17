@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { DashboardLayout } from '@/components/layout';
 import {
   Card,
@@ -9,13 +10,12 @@ import {
   CardHeader,
   CardTitle,
   Button,
-  Input,
   Badge,
   SectionLoader,
   Modal,
 } from '@/components/ui';
 import { formatDateTime } from '@/lib/utils';
-import { useChannels, useConnectShopify, useDisconnectChannel, useSyncChannel } from '@/hooks';
+import { useChannels, useDisconnectChannel, useSyncChannel } from '@/hooks';
 import type { Channel, ChannelType, ChannelSyncStatus } from '@/services/channels.service';
 import {
   Store,
@@ -29,6 +29,7 @@ import {
   Loader2,
   ShoppingBag,
   Package,
+  Settings,
 } from 'lucide-react';
 
 // Channel type configurations
@@ -42,29 +43,21 @@ const channelConfig: Record<ChannelType, { name: string; color: string; bgColor:
 };
 
 export default function ChannelsPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const connected = searchParams.get('connected');
   const error = searchParams.get('error');
 
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [showDisconnectModal, setShowDisconnectModal] = useState<string | null>(null);
-  const [shopifyDomain, setShopifyDomain] = useState('');
 
   const { data: channels, isLoading, error: loadError } = useChannels();
-  const connectShopify = useConnectShopify();
   const disconnectChannel = useDisconnectChannel();
   const syncChannel = useSyncChannel();
 
-  const handleConnectShopify = async () => {
-    if (!shopifyDomain) return;
-
-    try {
-      const result = await connectShopify.mutateAsync({ shopDomain: shopifyDomain });
-      // Redirect to Shopify OAuth
-      window.location.href = result.authorizationUrl;
-    } catch (err) {
-      console.error('Failed to initiate Shopify connection:', err);
-    }
+  // Handle connecting to Shopify - redirect to settings page
+  const handleConnectShopify = () => {
+    router.push('/channels/shopify');
   };
 
   const handleDisconnect = async (id: string) => {
@@ -202,8 +195,14 @@ export default function ChannelsPage() {
               name="Shopify"
               description="Connect your Shopify store"
               color="bg-green-100 text-green-700"
-              isConnected={channels?.some(c => c.type === 'Shopify' && c.isActive)}
-              onConnect={() => setShowConnectModal(true)}
+              isConnected={channels?.some(c => c.type === 'Shopify' && c.isConnected)}
+              hasCredentials={channels?.some(c => c.type === 'Shopify' && c.hasCredentials)}
+              onConnect={handleConnectShopify}
+              settingsUrl={
+                channels?.find(c => c.type === 'Shopify')?.id
+                  ? `/channels/${channels.find(c => c.type === 'Shopify')!.id}`
+                  : '/channels/shopify'
+              }
             />
             <IntegrationCard
               name="Amazon"
@@ -230,42 +229,60 @@ export default function ChannelsPage() {
         </CardContent>
       </Card>
 
-      {/* Connect Modal */}
+      {/* Connect Channel Modal */}
       <Modal
         isOpen={showConnectModal}
-        onClose={() => {
-          setShowConnectModal(false);
-          setShopifyDomain('');
-        }}
-        title="Connect Shopify Store"
+        onClose={() => setShowConnectModal(false)}
+        title="Connect Sales Channel"
       >
         <div className="space-y-4">
           <p className="text-muted-foreground">
-            Enter your Shopify store domain to connect your store.
+            Select a sales channel to connect.
           </p>
-          <Input
-            label="Store Domain"
-            placeholder="your-store.myshopify.com"
-            value={shopifyDomain}
-            onChange={(e) => setShopifyDomain(e.target.value)}
-            helperText="Enter just the domain without https://"
-          />
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="outline"
+          <div className="grid gap-3">
+            <button
               onClick={() => {
                 setShowConnectModal(false);
-                setShopifyDomain('');
+                handleConnectShopify();
               }}
+              className="flex items-center gap-3 rounded-lg border p-4 text-left hover:bg-muted transition-colors"
             >
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-100">
+                <Store className="h-5 w-5 text-green-700" />
+              </div>
+              <div>
+                <h4 className="font-medium">Shopify</h4>
+                <p className="text-xs text-muted-foreground">Connect your Shopify store</p>
+              </div>
+            </button>
+            <button
+              disabled
+              className="flex items-center gap-3 rounded-lg border p-4 text-left opacity-50 cursor-not-allowed"
+            >
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-100">
+                <Store className="h-5 w-5 text-orange-700" />
+              </div>
+              <div>
+                <h4 className="font-medium">Amazon</h4>
+                <p className="text-xs text-muted-foreground">Coming Soon</p>
+              </div>
+            </button>
+            <button
+              disabled
+              className="flex items-center gap-3 rounded-lg border p-4 text-left opacity-50 cursor-not-allowed"
+            >
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-yellow-100">
+                <Store className="h-5 w-5 text-yellow-700" />
+              </div>
+              <div>
+                <h4 className="font-medium">Flipkart</h4>
+                <p className="text-xs text-muted-foreground">Coming Soon</p>
+              </div>
+            </button>
+          </div>
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={() => setShowConnectModal(false)}>
               Cancel
-            </Button>
-            <Button
-              onClick={handleConnectShopify}
-              disabled={!shopifyDomain || connectShopify.isPending}
-              leftIcon={connectShopify.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : undefined}
-            >
-              {connectShopify.isPending ? 'Connecting...' : 'Connect'}
             </Button>
           </div>
         </div>
@@ -313,6 +330,7 @@ function ChannelCard({
   isSyncing: boolean;
 }) {
   const config = channelConfig[channel.type] || channelConfig.Custom;
+  const isConnected = channel.isConnected ?? channel.isActive;
 
   return (
     <div className="flex items-center justify-between rounded-lg border p-4">
@@ -323,10 +341,14 @@ function ChannelCard({
         <div>
           <div className="flex items-center gap-2">
             <h3 className="font-medium">{channel.name}</h3>
-            <Badge variant={channel.isActive ? 'success' : 'default'} size="sm">
-              {channel.isActive ? 'Active' : 'Inactive'}
-            </Badge>
-            <SyncStatusBadge status={channel.syncStatus} />
+            {isConnected ? (
+              <Badge variant="success" size="sm">Connected</Badge>
+            ) : channel.hasCredentials ? (
+              <Badge variant="warning" size="sm">Setup Required</Badge>
+            ) : (
+              <Badge variant="default" size="sm">Not Connected</Badge>
+            )}
+            {isConnected && <SyncStatusBadge status={channel.syncStatus} />}
           </div>
           <p className="text-sm text-muted-foreground">
             {channel.storeName || channel.storeUrl || config.name}
@@ -336,13 +358,16 @@ function ChannelCard({
             {channel.lastSyncAt && (
               <span>Last sync: {formatDateTime(channel.lastSyncAt)}</span>
             )}
+            {channel.lastError && (
+              <span className="text-error">Error: {channel.lastError}</span>
+            )}
           </div>
         </div>
       </div>
       <div className="flex items-center gap-2">
         {channel.storeUrl && (
           <a
-            href={`https://${channel.storeUrl}`}
+            href={channel.storeUrl.startsWith('http') ? channel.storeUrl : `https://${channel.storeUrl}`}
             target="_blank"
             rel="noopener noreferrer"
             className="rounded p-2 hover:bg-muted"
@@ -351,21 +376,32 @@ function ChannelCard({
             <ExternalLink className="h-4 w-4 text-muted-foreground" />
           </a>
         )}
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onSync}
-          disabled={isSyncing}
-          leftIcon={
-            isSyncing ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4" />
-            )
-          }
-        >
-          {isSyncing ? 'Syncing...' : 'Sync'}
-        </Button>
+        {isConnected && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onSync}
+            disabled={isSyncing}
+            leftIcon={
+              isSyncing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )
+            }
+          >
+            {isSyncing ? 'Syncing...' : 'Sync'}
+          </Button>
+        )}
+        <Link href={`/channels/${channel.id}`}>
+          <Button
+            variant="outline"
+            size="sm"
+            leftIcon={<Settings className="h-4 w-4" />}
+          >
+            {isConnected ? 'Settings' : 'Complete Setup'}
+          </Button>
+        </Link>
         <Button
           variant="outline"
           size="sm"
@@ -373,7 +409,7 @@ function ChannelCard({
           leftIcon={<Trash2 className="h-4 w-4" />}
           className="text-error hover:bg-error/10"
         >
-          Disconnect
+          Remove
         </Button>
       </div>
     </div>
@@ -403,15 +439,19 @@ function IntegrationCard({
   description,
   color,
   isConnected,
+  hasCredentials,
   comingSoon,
   onConnect,
+  settingsUrl,
 }: {
   name: string;
   description: string;
   color: string;
   isConnected?: boolean;
+  hasCredentials?: boolean;
   comingSoon?: boolean;
   onConnect?: () => void;
+  settingsUrl?: string;
 }) {
   return (
     <div className="rounded-lg border p-4">
@@ -424,20 +464,45 @@ function IntegrationCard({
           <p className="text-xs text-muted-foreground">{description}</p>
         </div>
       </div>
-      <div className="mt-4">
+      <div className="mt-4 flex items-center gap-2">
         {comingSoon ? (
           <Badge variant="default" size="sm">
             Coming Soon
           </Badge>
         ) : isConnected ? (
-          <Badge variant="success" size="sm">
-            <CheckCircle className="mr-1 h-3 w-3" />
-            Connected
-          </Badge>
+          <>
+            <Badge variant="success" size="sm">
+              <CheckCircle className="mr-1 h-3 w-3" />
+              Connected
+            </Badge>
+            {settingsUrl && (
+              <Link href={settingsUrl}>
+                <Button size="sm" variant="ghost" className="h-6 px-2">
+                  <Settings className="h-3 w-3" />
+                </Button>
+              </Link>
+            )}
+          </>
+        ) : hasCredentials ? (
+          <>
+            <Badge variant="warning" size="sm">
+              <Clock className="mr-1 h-3 w-3" />
+              Setup Required
+            </Badge>
+            {settingsUrl && (
+              <Link href={settingsUrl}>
+                <Button size="sm" variant="outline">
+                  Complete Setup
+                </Button>
+              </Link>
+            )}
+          </>
         ) : (
-          <Button size="sm" variant="outline" onClick={onConnect}>
-            Connect
-          </Button>
+          <Link href={settingsUrl || '#'}>
+            <Button size="sm" variant="outline" onClick={!settingsUrl ? onConnect : undefined}>
+              Connect
+            </Button>
+          </Link>
         )}
       </div>
     </div>

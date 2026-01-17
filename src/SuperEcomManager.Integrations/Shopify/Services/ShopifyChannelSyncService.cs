@@ -1,78 +1,98 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using SuperEcomManager.Application.Common.Interfaces;
+using SuperEcomManager.Application.Features.Channels;
 using SuperEcomManager.Domain.Entities.Channels;
 using SuperEcomManager.Domain.Entities.Orders;
+using SuperEcomManager.Domain.Enums;
 
 namespace SuperEcomManager.Integrations.Shopify.Services;
 
 /// <summary>
-/// Service for synchronizing orders from Shopify to the internal order system.
+/// Shopify implementation of IChannelSyncService.
 /// </summary>
-public class ShopifyOrderSyncService : IShopifyOrderSyncService
+public class ShopifyChannelSyncService : IChannelSyncService
 {
     private readonly IShopifyClient _shopifyClient;
     private readonly ShopifyOrderMapper _orderMapper;
-    private readonly ILogger<ShopifyOrderSyncService> _logger;
+    private readonly ITenantDbContext _dbContext;
+    private readonly ILogger<ShopifyChannelSyncService> _logger;
 
-    // These are injected via property injection since the service is created per-tenant
-    public DbSet<SalesChannel>? SalesChannels { get; set; }
-    public DbSet<Order>? Orders { get; set; }
-    public Func<CancellationToken, Task<int>>? SaveChangesAsync { get; set; }
+    public ChannelType ChannelType => ChannelType.Shopify;
 
-    public ShopifyOrderSyncService(
+    public ShopifyChannelSyncService(
         IShopifyClient shopifyClient,
         ShopifyOrderMapper orderMapper,
-        ILogger<ShopifyOrderSyncService> logger)
+        ITenantDbContext dbContext,
+        ILogger<ShopifyChannelSyncService> logger)
     {
         _shopifyClient = shopifyClient;
         _orderMapper = orderMapper;
+        _dbContext = dbContext;
         _logger = logger;
     }
 
-    public async Task<OrderSyncResult> SyncOrdersAsync(
+    public async Task<ChannelSyncResult> SyncOrdersAsync(
         Guid channelId,
         DateTime? fromDate = null,
         DateTime? toDate = null,
         CancellationToken cancellationToken = default)
     {
-        if (SalesChannels == null || Orders == null || SaveChangesAsync == null)
-        {
-            _logger.LogError("ShopifyOrderSyncService not properly configured with DbContext");
-            return OrderSyncResult.Failed("Service not properly configured");
-        }
-
-        var channel = await SalesChannels
+        var channel = await _dbContext.SalesChannels
             .FirstOrDefaultAsync(c => c.Id == channelId, cancellationToken);
 
         if (channel == null)
         {
-            return OrderSyncResult.Failed("Channel not found");
+            return new ChannelSyncResult
+            {
+                ChannelId = channelId,
+                Status = "Failed",
+                Errors = new List<string> { "Channel not found" }
+            };
         }
 
         if (!channel.IsConnected)
         {
-            return OrderSyncResult.Failed("Channel is not connected");
+            return new ChannelSyncResult
+            {
+                ChannelId = channelId,
+                Status = "Failed",
+                Errors = new List<string> { "Channel is not connected" }
+            };
         }
 
-        // Use AccessToken for OAuth-based channels, fallback to CredentialsEncrypted for legacy
+        // Use AccessToken for OAuth-based channels
         var accessToken = channel.AccessToken ?? channel.CredentialsEncrypted;
         if (string.IsNullOrEmpty(accessToken))
         {
-            return OrderSyncResult.Failed("Channel credentials are missing");
+            return new ChannelSyncResult
+            {
+                ChannelId = channelId,
+                Status = "Failed",
+                Errors = new List<string> { "Channel credentials are missing" }
+            };
         }
-
-        var result = new OrderSyncResult();
-        var shopDomain = channel.StoreUrl!;
 
         // Apply InitialSyncDays if no date range specified
         if (!fromDate.HasValue && channel.InitialSyncDays.HasValue)
         {
             fromDate = DateTime.UtcNow.AddDays(-channel.InitialSyncDays.Value);
+            _logger.LogInformation("Applying InitialSyncDays={Days}, syncing orders from {FromDate}",
+                channel.InitialSyncDays.Value, fromDate);
         }
+
+        var result = new ChannelSyncResult
+        {
+            ChannelId = channelId,
+            SyncedAt = DateTime.UtcNow
+        };
+
+        var shopDomain = channel.StoreUrl!.Replace("https://", "").Replace("http://", "").TrimEnd('/');
 
         try
         {
-            _logger.LogInformation("Starting order sync for channel {ChannelId}", channelId);
+            _logger.LogInformation("Starting order sync for channel {ChannelId}, shop: {ShopDomain}",
+                channelId, shopDomain);
 
             string? pageInfo = null;
             var hasMorePages = true;
@@ -112,17 +132,14 @@ public class ShopifyOrderSyncService : IShopifyOrderSyncService
                 }
 
                 // Save in batches
-                await SaveChangesAsync(cancellationToken);
+                await _dbContext.SaveChangesAsync(cancellationToken);
 
                 // Check for pagination
-                // Note: Shopify uses Link headers for cursor-based pagination
-                // For simplicity, we break if we get fewer than 250 orders
                 hasMorePages = orders.Count == 250;
                 pageInfo = null; // Would need to extract from response headers for real pagination
             }
 
-            channel.RecordSync(true, $"Imported: {result.OrdersImported}, Updated: {result.OrdersUpdated}");
-            await SaveChangesAsync(cancellationToken);
+            result.Status = result.OrdersFailed > 0 ? "CompletedWithErrors" : "Completed";
 
             _logger.LogInformation(
                 "Completed order sync for channel {ChannelId}: {Imported} imported, {Updated} updated, {Failed} failed",
@@ -133,84 +150,50 @@ public class ShopifyOrderSyncService : IShopifyOrderSyncService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Order sync failed for channel {ChannelId}", channelId);
-            channel.RecordSync(false, ex.Message);
-            await SaveChangesAsync(cancellationToken);
-
             result.Status = "Failed";
             result.Errors.Add(ex.Message);
             return result;
         }
     }
 
-    public async Task<OrderSyncResult> SyncSingleOrderAsync(
+    public async Task<ChannelSyncResult> SyncProductsAsync(
         Guid channelId,
-        long shopifyOrderId,
         CancellationToken cancellationToken = default)
     {
-        if (SalesChannels == null || Orders == null || SaveChangesAsync == null)
+        // TODO: Implement product sync
+        _logger.LogWarning("Product sync not yet implemented for Shopify");
+        return new ChannelSyncResult
         {
-            return OrderSyncResult.Failed("Service not properly configured");
-        }
+            ChannelId = channelId,
+            Status = "NotImplemented",
+            Errors = new List<string> { "Product sync not yet implemented" }
+        };
+    }
 
-        var channel = await SalesChannels
-            .FirstOrDefaultAsync(c => c.Id == channelId, cancellationToken);
-
-        if (channel == null)
+    public async Task<ChannelSyncResult> SyncInventoryAsync(
+        Guid channelId,
+        CancellationToken cancellationToken = default)
+    {
+        // TODO: Implement inventory sync
+        _logger.LogWarning("Inventory sync not yet implemented for Shopify");
+        return new ChannelSyncResult
         {
-            return OrderSyncResult.Failed("Channel not found");
-        }
-
-        if (!channel.IsConnected)
-        {
-            return OrderSyncResult.Failed("Channel is not connected");
-        }
-
-        // Use AccessToken for OAuth-based channels, fallback to CredentialsEncrypted for legacy
-        var accessToken = channel.AccessToken ?? channel.CredentialsEncrypted;
-        if (string.IsNullOrEmpty(accessToken))
-        {
-            return OrderSyncResult.Failed("Channel credentials are missing");
-        }
-
-        var result = new OrderSyncResult();
-
-        try
-        {
-            var shopifyOrder = await _shopifyClient.GetOrderAsync(
-                channel.StoreUrl!,
-                accessToken,
-                shopifyOrderId,
-                cancellationToken);
-
-            if (shopifyOrder == null)
-            {
-                return OrderSyncResult.Failed($"Order {shopifyOrderId} not found in Shopify");
-            }
-
-            await ProcessOrderAsync(channel.Id, shopifyOrder, result, cancellationToken);
-            await SaveChangesAsync(cancellationToken);
-
-            return result;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to sync single order {OrderId}", shopifyOrderId);
-            result.Status = "Failed";
-            result.Errors.Add(ex.Message);
-            return result;
-        }
+            ChannelId = channelId,
+            Status = "NotImplemented",
+            Errors = new List<string> { "Inventory sync not yet implemented" }
+        };
     }
 
     private async Task ProcessOrderAsync(
         Guid channelId,
         Models.ShopifyOrder shopifyOrder,
-        OrderSyncResult result,
+        ChannelSyncResult result,
         CancellationToken cancellationToken)
     {
         var externalOrderId = shopifyOrder.Id.ToString();
 
         // Check if order already exists
-        var existingOrder = await Orders!
+        var existingOrder = await _dbContext.Orders
             .FirstOrDefaultAsync(o =>
                 o.ChannelId == channelId &&
                 o.ExternalOrderId == externalOrderId,
@@ -227,7 +210,7 @@ public class ShopifyOrderSyncService : IShopifyOrderSyncService
         {
             // Create new order
             var order = _orderMapper.MapToOrder(shopifyOrder, channelId);
-            await Orders.AddAsync(order, cancellationToken);
+            await _dbContext.Orders.AddAsync(order, cancellationToken);
             result.OrdersImported++;
             _logger.LogDebug("Imported new order {OrderNumber} from Shopify", order.OrderNumber);
         }

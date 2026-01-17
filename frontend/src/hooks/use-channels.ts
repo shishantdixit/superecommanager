@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { channelsService, ConnectShopifyRequest } from '@/services/channels.service';
+import { channelsService, SaveShopifyCredentialsRequest, UpdateChannelSettingsRequest } from '@/services/channels.service';
 
 export const channelKeys = {
   all: ['channels'] as const,
@@ -31,11 +31,25 @@ export function useChannel(id: string) {
 }
 
 /**
- * Hook to initiate Shopify OAuth connection.
+ * Hook to save Shopify API credentials.
+ */
+export function useSaveShopifyCredentials() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data: SaveShopifyCredentialsRequest) => channelsService.saveShopifyCredentials(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: channelKeys.lists() });
+    },
+  });
+}
+
+/**
+ * Hook to initiate Shopify OAuth connection for a channel.
  */
 export function useConnectShopify() {
   return useMutation({
-    mutationFn: (data: ConnectShopifyRequest) => channelsService.connectShopify(data),
+    mutationFn: (channelId: string) => channelsService.connectShopify(channelId),
   });
 }
 
@@ -63,6 +77,22 @@ export function useSyncChannel() {
     mutationFn: (id: string) => channelsService.syncChannel(id),
     onSuccess: (_, id) => {
       queryClient.invalidateQueries({ queryKey: channelKeys.detail(id) });
+      queryClient.invalidateQueries({ queryKey: channelKeys.lists() });
+    },
+  });
+}
+
+/**
+ * Hook to update channel settings.
+ */
+export function useUpdateChannelSettings() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, ...data }: UpdateChannelSettingsRequest & { id: string }) =>
+      channelsService.updateChannelSettings(id, data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: channelKeys.detail(variables.id) });
       queryClient.invalidateQueries({ queryKey: channelKeys.lists() });
     },
   });

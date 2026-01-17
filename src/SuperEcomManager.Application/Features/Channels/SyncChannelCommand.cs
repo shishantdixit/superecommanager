@@ -34,16 +34,16 @@ public class ChannelSyncResult
 public class SyncChannelCommandHandler : IRequestHandler<SyncChannelCommand, Result<ChannelSyncResult>>
 {
     private readonly ITenantDbContext _dbContext;
+    private readonly IChannelSyncServiceFactory _syncServiceFactory;
     private readonly ILogger<SyncChannelCommandHandler> _logger;
-
-    // Will be injected from infrastructure to perform actual sync
-    public Func<Guid, CancellationToken, Task<ChannelSyncResult>>? PerformSync { get; set; }
 
     public SyncChannelCommandHandler(
         ITenantDbContext dbContext,
+        IChannelSyncServiceFactory syncServiceFactory,
         ILogger<SyncChannelCommandHandler> logger)
     {
         _dbContext = dbContext;
+        _syncServiceFactory = syncServiceFactory;
         _logger = logger;
     }
 
@@ -57,46 +57,38 @@ public class SyncChannelCommandHandler : IRequestHandler<SyncChannelCommand, Res
             return Result<ChannelSyncResult>.Failure("Channel not found");
         }
 
-        if (!channel.IsActive)
+        if (!channel.IsConnected)
         {
-            return Result<ChannelSyncResult>.Failure("Channel is not active. Please reconnect first.");
+            return Result<ChannelSyncResult>.Failure("Channel is not connected. Please complete the connection setup first.");
         }
 
-        if (string.IsNullOrEmpty(channel.CredentialsEncrypted))
+        // Check for credentials - AccessToken for OAuth-based channels, CredentialsEncrypted for others
+        var hasCredentials = !string.IsNullOrEmpty(channel.AccessToken) || !string.IsNullOrEmpty(channel.CredentialsEncrypted);
+        if (!hasCredentials)
         {
             return Result<ChannelSyncResult>.Failure("Channel credentials are missing. Please reconnect.");
         }
 
-        _logger.LogInformation("Starting manual sync for channel {ChannelId}", request.ChannelId);
+        // Get the appropriate sync service for this channel type
+        var syncService = _syncServiceFactory.GetService(channel.Type);
+        if (syncService == null)
+        {
+            return Result<ChannelSyncResult>.Failure($"Sync not supported for channel type: {channel.Type}");
+        }
+
+        _logger.LogInformation("Starting manual sync for channel {ChannelId} (type: {ChannelType})",
+            request.ChannelId, channel.Type);
 
         try
         {
-            ChannelSyncResult result;
-
-            if (PerformSync != null)
-            {
-                result = await PerformSync(request.ChannelId, cancellationToken);
-            }
-            else
-            {
-                // Fallback: mark sync as triggered (actual sync will be handled by background job)
-                result = new ChannelSyncResult
-                {
-                    ChannelId = request.ChannelId,
-                    OrdersImported = 0,
-                    OrdersUpdated = 0,
-                    OrdersFailed = 0,
-                    SyncedAt = DateTime.UtcNow,
-                    Status = "Queued"
-                };
-            }
+            var result = await syncService.SyncOrdersAsync(request.ChannelId, cancellationToken: cancellationToken);
 
             channel.RecordSync(result.Status != "Failed", result.Status);
             await _dbContext.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation(
-                "Sync completed for channel {ChannelId}: {OrdersImported} imported, {OrdersUpdated} updated",
-                request.ChannelId, result.OrdersImported, result.OrdersUpdated);
+                "Sync completed for channel {ChannelId}: {OrdersImported} imported, {OrdersUpdated} updated, {OrdersFailed} failed",
+                request.ChannelId, result.OrdersImported, result.OrdersUpdated, result.OrdersFailed);
 
             return Result<ChannelSyncResult>.Success(result);
         }

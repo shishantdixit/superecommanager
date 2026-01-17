@@ -15,8 +15,13 @@ builder.Services.AddIntegrations(builder.Configuration);
 // Add HTTP context accessor for CurrentUserService
 builder.Services.AddHttpContextAccessor();
 
-// Add controllers
-builder.Services.AddControllers();
+// Add controllers with JSON options
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        // Serialize enums as strings (e.g., "Shopify" instead of 1)
+        options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+    });
 
 // Configure CORS
 builder.Services.AddCors(options =>

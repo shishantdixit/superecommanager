@@ -117,15 +117,24 @@ public class ShopifyClient : IShopifyClient
         }
     }
 
-    public async Task<ShopifyAccessTokenResponse?> ExchangeCodeForTokenAsync(string shopDomain, string code, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Exchange OAuth code for access token using tenant-specific credentials.
+    /// Note: This method requires the tenant's API credentials.
+    /// </summary>
+    public async Task<ShopifyAccessTokenResponse?> ExchangeCodeForTokenAsync(
+        string shopDomain,
+        string code,
+        string apiKey,
+        string apiSecret,
+        CancellationToken cancellationToken = default)
     {
         try
         {
             var url = $"https://{shopDomain}/admin/oauth/access_token";
             var content = new FormUrlEncodedContent(new Dictionary<string, string>
             {
-                ["client_id"] = _settings.ApiKey,
-                ["client_secret"] = _settings.ApiSecret,
+                ["client_id"] = apiKey,
+                ["client_secret"] = apiSecret,
                 ["code"] = code
             });
 
@@ -220,26 +229,33 @@ public class ShopifyClient : IShopifyClient
         }
     }
 
-    public string GetAuthorizationUrl(string shopDomain, string redirectUri, string state)
+    /// <summary>
+    /// Generate OAuth authorization URL using tenant-specific credentials.
+    /// </summary>
+    public string GetAuthorizationUrl(string shopDomain, string redirectUri, string state, string apiKey, string scopes)
     {
-        var scopes = string.Join(",", _settings.Scopes);
         var encodedRedirectUri = HttpUtility.UrlEncode(redirectUri);
 
         return $"https://{shopDomain}/admin/oauth/authorize?" +
-               $"client_id={_settings.ApiKey}&" +
+               $"client_id={apiKey}&" +
                $"scope={scopes}&" +
                $"redirect_uri={encodedRedirectUri}&" +
                $"state={state}";
     }
 
-    public bool VerifyWebhookSignature(string requestBody, string hmacHeader)
+    /// <summary>
+    /// Verify webhook signature using the provided secret.
+    /// Falls back to default webhook secret if not provided.
+    /// </summary>
+    public bool VerifyWebhookSignature(string requestBody, string hmacHeader, string? webhookSecret = null)
     {
-        if (string.IsNullOrEmpty(_settings.WebhookSecret) || string.IsNullOrEmpty(hmacHeader))
+        var secret = webhookSecret ?? _settings.WebhookSecret;
+        if (string.IsNullOrEmpty(secret) || string.IsNullOrEmpty(hmacHeader))
             return false;
 
         try
         {
-            using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(_settings.WebhookSecret));
+            using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret));
             var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(requestBody));
             var computedHmac = Convert.ToBase64String(hash);
             return hmacHeader == computedHmac;

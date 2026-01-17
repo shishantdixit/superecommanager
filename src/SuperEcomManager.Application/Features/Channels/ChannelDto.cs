@@ -17,14 +17,55 @@ public class ChannelDto
     public int TotalOrders { get; set; }
     public ChannelSyncStatus SyncStatus { get; set; }
     public DateTime CreatedAt { get; set; }
+    public bool AutoSyncOrders { get; set; }
+    public bool AutoSyncInventory { get; set; }
+
+    // Credential status (for OAuth channels like Shopify)
+    public bool IsConnected { get; set; }
+    public bool HasCredentials { get; set; }
+    public string? LastError { get; set; }
+
+    // Advanced sync settings
+    public int? InitialSyncDays { get; set; }
+    public bool SyncProductsEnabled { get; set; }
+    public bool AutoSyncProducts { get; set; }
+    public DateTime? LastProductSyncAt { get; set; }
+    public DateTime? LastInventorySyncAt { get; set; }
 }
 
 /// <summary>
-/// Shopify connection request.
+/// Request to update channel settings.
+/// </summary>
+public class UpdateChannelSettingsRequest
+{
+    public bool? AutoSyncOrders { get; set; }
+    public bool? AutoSyncInventory { get; set; }
+
+    // Advanced sync settings
+    public int? InitialSyncDays { get; set; }
+    public bool? SyncProductsEnabled { get; set; }
+    public bool? AutoSyncProducts { get; set; }
+}
+
+/// <summary>
+/// Shopify connection request (for OAuth initiation after credentials are saved).
 /// </summary>
 public class ConnectShopifyRequest
 {
     public string ShopDomain { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Request to save Shopify API credentials.
+/// Each tenant must create their own Shopify app and provide these credentials.
+/// </summary>
+public class SaveShopifyCredentialsRequest
+{
+    public Guid? ChannelId { get; set; }
+    public string ApiKey { get; set; } = string.Empty;
+    public string ApiSecret { get; set; } = string.Empty;
+    public string ShopDomain { get; set; } = string.Empty;
+    public string? Scopes { get; set; }
 }
 
 /// <summary>

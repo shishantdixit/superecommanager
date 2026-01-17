@@ -21,6 +21,24 @@ public class SalesChannel : AuditableEntity, ISoftDeletable
     public string? CredentialsEncrypted { get; private set; }
     public string? WebhookSecret { get; private set; }
 
+    // Shopify/OAuth specific fields (stored separately for easy access)
+    public string? ApiKey { get; private set; }
+    public string? ApiSecret { get; private set; }
+    public string? AccessToken { get; private set; }
+    public string? Scopes { get; private set; }
+
+    // Connection status
+    public bool IsConnected { get; private set; }
+    public DateTime? LastConnectedAt { get; private set; }
+    public string? LastError { get; private set; }
+
+    // Sync settings
+    public int? InitialSyncDays { get; private set; } = 7; // null = all orders, 7 = last 7 days, etc.
+    public bool SyncProductsEnabled { get; private set; }
+    public bool AutoSyncProducts { get; private set; }
+    public DateTime? LastProductSyncAt { get; private set; }
+    public DateTime? LastInventorySyncAt { get; private set; }
+
     public DateTime? DeletedAt { get; set; }
     public Guid? DeletedBy { get; set; }
 
@@ -73,4 +91,75 @@ public class SalesChannel : AuditableEntity, ISoftDeletable
 
     public void Activate() { IsActive = true; UpdatedAt = DateTime.UtcNow; }
     public void Deactivate() { IsActive = false; UpdatedAt = DateTime.UtcNow; }
+
+    public void UpdateSyncSettings(bool autoSyncOrders, bool autoSyncInventory)
+    {
+        AutoSyncOrders = autoSyncOrders;
+        AutoSyncInventory = autoSyncInventory;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void UpdateAdvancedSyncSettings(
+        int? initialSyncDays,
+        bool syncProductsEnabled,
+        bool autoSyncProducts)
+    {
+        InitialSyncDays = initialSyncDays;
+        SyncProductsEnabled = syncProductsEnabled;
+        AutoSyncProducts = autoSyncProducts;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void RecordProductSync()
+    {
+        LastProductSyncAt = DateTime.UtcNow;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void RecordInventorySync()
+    {
+        LastInventorySyncAt = DateTime.UtcNow;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void SetApiCredentials(string apiKey, string apiSecret, string? scopes = null)
+    {
+        ApiKey = apiKey;
+        ApiSecret = apiSecret;
+        Scopes = scopes;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void SetAccessToken(string accessToken)
+    {
+        AccessToken = accessToken;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void MarkConnected()
+    {
+        IsConnected = true;
+        LastConnectedAt = DateTime.UtcNow;
+        LastError = null;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void MarkDisconnected(string? error = null)
+    {
+        IsConnected = false;
+        AccessToken = null;
+        LastError = error;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void ClearCredentials()
+    {
+        ApiKey = null;
+        ApiSecret = null;
+        AccessToken = null;
+        Scopes = null;
+        IsConnected = false;
+        LastError = null;
+        UpdatedAt = DateTime.UtcNow;
+    }
 }

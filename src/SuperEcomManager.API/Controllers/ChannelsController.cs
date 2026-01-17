@@ -11,6 +11,19 @@ namespace SuperEcomManager.API.Controllers;
 [Authorize]
 public class ChannelsController : ApiControllerBase
 {
+    private readonly IConfiguration _configuration;
+
+    public ChannelsController(IConfiguration configuration)
+    {
+        _configuration = configuration;
+    }
+
+    private string GetFrontendUrl()
+    {
+        // Get first allowed origin as frontend URL
+        var origins = _configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
+        return origins?.FirstOrDefault() ?? "http://localhost:3000";
+    }
     /// <summary>
     /// Get all sales channels.
     /// </summary>
@@ -38,19 +51,43 @@ public class ChannelsController : ApiControllerBase
     }
 
     /// <summary>
-    /// Initiate Shopify OAuth connection.
+    /// Save Shopify API credentials for a tenant.
+    /// Each tenant must create their own Shopify app and provide their credentials here.
     /// </summary>
-    [HttpPost("shopify/connect")]
+    [HttpPost("shopify/credentials")]
+    [ProducesResponseType(typeof(ApiResponse<ChannelDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ApiResponse<ChannelDto>>> SaveShopifyCredentials(
+        [FromBody] SaveShopifyCredentialsRequest request)
+    {
+        var result = await Mediator.Send(new SaveShopifyCredentialsCommand
+        {
+            ChannelId = request.ChannelId,
+            ApiKey = request.ApiKey,
+            ApiSecret = request.ApiSecret,
+            ShopDomain = request.ShopDomain,
+            Scopes = request.Scopes
+        });
+
+        if (!result.IsSuccess)
+            return BadRequestResponse<ChannelDto>(result.Errors.FirstOrDefault() ?? "Failed to save credentials");
+
+        return OkResponse(result.Value!);
+    }
+
+    /// <summary>
+    /// Initiate Shopify OAuth connection for a channel that has credentials saved.
+    /// </summary>
+    [HttpPost("{id:guid}/shopify/connect")]
     [ProducesResponseType(typeof(ApiResponse<ShopifyOAuthResult>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<ApiResponse<ShopifyOAuthResult>>> ConnectShopify(
-        [FromBody] ConnectShopifyRequest request)
+    public async Task<ActionResult<ApiResponse<ShopifyOAuthResult>>> ConnectShopify(Guid id)
     {
         var redirectUri = $"{Request.Scheme}://{Request.Host}/api/channels/shopify/callback";
 
         var result = await Mediator.Send(new InitiateShopifyOAuthCommand
         {
-            ShopDomain = request.ShopDomain,
+            ChannelId = id,
             RedirectUri = redirectUri
         });
 
@@ -62,6 +99,8 @@ public class ChannelsController : ApiControllerBase
 
     /// <summary>
     /// Shopify OAuth callback handler.
+    /// This endpoint does not require authentication as it's called directly by Shopify.
+    /// Tenant context is restored from the OAuth state stored in cache.
     /// </summary>
     [HttpGet("shopify/callback")]
     [AllowAnonymous]
@@ -72,6 +111,8 @@ public class ChannelsController : ApiControllerBase
         [FromQuery] string state,
         [FromQuery] string shop)
     {
+        var frontendUrl = GetFrontendUrl();
+
         var result = await Mediator.Send(new CompleteShopifyOAuthCommand
         {
             Code = code,
@@ -82,11 +123,12 @@ public class ChannelsController : ApiControllerBase
         if (!result.IsSuccess)
         {
             // Redirect to frontend with error
-            return Redirect($"/settings/channels?error={Uri.EscapeDataString(result.Errors.FirstOrDefault() ?? "Connection failed")}");
+            var errorMessage = Uri.EscapeDataString(result.Errors.FirstOrDefault() ?? "Connection failed");
+            return Redirect($"{frontendUrl}/channels/shopify?error={errorMessage}");
         }
 
-        // Redirect to frontend with success
-        return Redirect($"/settings/channels?connected=true&channel={result.Value!.Id}");
+        // Redirect to frontend channel settings page with success
+        return Redirect($"{frontendUrl}/channels/{result.Value!.Id}?connected=true");
     }
 
     /// <summary>
@@ -117,6 +159,33 @@ public class ChannelsController : ApiControllerBase
 
         if (!result.IsSuccess)
             return BadRequestResponse<ChannelSyncResult>(result.Errors.FirstOrDefault() ?? "Sync failed");
+
+        return OkResponse(result.Value!);
+    }
+
+    /// <summary>
+    /// Update channel settings.
+    /// </summary>
+    [HttpPost("{id:guid}/settings")]
+    [ProducesResponseType(typeof(ApiResponse<ChannelDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ApiResponse<ChannelDto>>> UpdateChannelSettings(
+        Guid id,
+        [FromBody] UpdateChannelSettingsRequest request)
+    {
+        var result = await Mediator.Send(new UpdateChannelSettingsCommand
+        {
+            ChannelId = id,
+            AutoSyncOrders = request.AutoSyncOrders,
+            AutoSyncInventory = request.AutoSyncInventory,
+            InitialSyncDays = request.InitialSyncDays,
+            SyncProductsEnabled = request.SyncProductsEnabled,
+            AutoSyncProducts = request.AutoSyncProducts
+        });
+
+        if (!result.IsSuccess)
+            return BadRequestResponse<ChannelDto>(result.Errors.FirstOrDefault() ?? "Update failed");
 
         return OkResponse(result.Value!);
     }
