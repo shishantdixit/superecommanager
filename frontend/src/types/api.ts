@@ -70,35 +70,56 @@ export interface Order {
   id: string;
   orderNumber: string;
   externalOrderId: string;
+  externalOrderNumber?: string;
+  channelId: string;
+  channelName: string;
   channelType: string;
   status: OrderStatus;
   customerName: string;
-  customerEmail: string;
-  customerPhone: string;
+  customerEmail?: string;
+  customerPhone?: string;
   shippingAddress: Address;
+  shippingCity: string;
+  shippingState: string;
   billingAddress?: Address;
   items: OrderItem[];
   subtotal: number;
-  shippingCharges: number;
-  discount: number;
-  tax: number;
-  total: number;
-  paymentMethod: string;
+  shippingAmount: number;
+  discountAmount: number;
+  taxAmount: number;
+  totalAmount: number;
+  currency: string;
+  paymentMethod?: string;
   paymentStatus: PaymentStatus;
+  fulfillmentStatus: string;
+  isCOD: boolean;
+  itemCount: number;
+  orderDate: string;
   notes?: string;
+  customerNotes?: string;
+  internalNotes?: string;
   createdAt: string;
-  updatedAt: string;
+  updatedAt?: string;
+}
+
+export interface MoneyDto {
+  amount: number;
+  currency: string;
 }
 
 export interface OrderItem {
   id: string;
   sku: string;
   name: string;
+  variantName?: string;
   quantity: number;
-  unitPrice: number;
+  unitPrice: number | MoneyDto;
   discount: number;
   tax: number;
   total: number;
+  discountAmount?: number | MoneyDto;
+  taxAmount?: number | MoneyDto;
+  totalAmount?: MoneyDto;
 }
 
 export interface Address {
@@ -324,6 +345,7 @@ export interface PaginationParams {
 
 export interface OrderFilters extends PaginationParams {
   status?: OrderStatus;
+  channelId?: string;
   channelType?: string;
   paymentStatus?: PaymentStatus;
   fromDate?: string;

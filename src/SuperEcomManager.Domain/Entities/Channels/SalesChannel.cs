@@ -34,6 +34,11 @@ public class SalesChannel : AuditableEntity, ISoftDeletable
 
     // Sync settings
     public int? InitialSyncDays { get; private set; } = 7; // null = all orders, 7 = last 7 days, etc.
+    public int? InventorySyncDays { get; private set; } = 7; // null = all products, 7 = products updated in last 7 days
+    public int? ProductSyncDays { get; private set; } = 7; // null = all products, 7 = products updated in last 7 days
+    public int? OrderSyncLimit { get; private set; } = 100; // Maximum orders to sync per batch, null = unlimited
+    public int? InventorySyncLimit { get; private set; } = 500; // Maximum inventory items to sync per batch, null = unlimited
+    public int? ProductSyncLimit { get; private set; } = 50; // Maximum products to sync per batch, null = unlimited
     public bool SyncProductsEnabled { get; private set; }
     public bool AutoSyncProducts { get; private set; }
     public DateTime? LastProductSyncAt { get; private set; }
@@ -101,10 +106,20 @@ public class SalesChannel : AuditableEntity, ISoftDeletable
 
     public void UpdateAdvancedSyncSettings(
         int? initialSyncDays,
+        int? inventorySyncDays,
+        int? productSyncDays,
+        int? orderSyncLimit,
+        int? inventorySyncLimit,
+        int? productSyncLimit,
         bool syncProductsEnabled,
         bool autoSyncProducts)
     {
         InitialSyncDays = initialSyncDays;
+        InventorySyncDays = inventorySyncDays;
+        ProductSyncDays = productSyncDays;
+        OrderSyncLimit = orderSyncLimit;
+        InventorySyncLimit = inventorySyncLimit;
+        ProductSyncLimit = productSyncLimit;
         SyncProductsEnabled = syncProductsEnabled;
         AutoSyncProducts = autoSyncProducts;
         UpdatedAt = DateTime.UtcNow;

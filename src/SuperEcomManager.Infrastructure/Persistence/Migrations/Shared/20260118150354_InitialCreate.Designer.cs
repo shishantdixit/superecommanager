@@ -12,7 +12,7 @@ using SuperEcomManager.Infrastructure.Persistence;
 namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Shared
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260116091618_InitialCreate")]
+    [Migration("20260118150354_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -500,7 +500,7 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Shared
                     b.HasKey("Id");
 
                     b.HasIndex("DeletedAt")
-                        .HasFilter("deleted_at IS NULL");
+                        .HasFilter("\"DeletedAt\" IS NULL");
 
                     b.HasIndex("SchemaName")
                         .IsUnique();

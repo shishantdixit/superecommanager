@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using SuperEcomManager.Domain.Entities.Audit;
 using SuperEcomManager.Domain.Entities.Channels;
 using SuperEcomManager.Domain.Entities.Finance;
@@ -72,4 +73,9 @@ public interface ITenantDbContext
     DbSet<WebhookDelivery> WebhookDeliveries { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Provides access to database-related information and operations.
+    /// </summary>
+    DatabaseFacade Database { get; }
 }

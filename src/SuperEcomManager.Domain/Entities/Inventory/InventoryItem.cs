@@ -71,4 +71,34 @@ public class InventoryItem : AuditableEntity
     }
 
     public bool IsLowStock() => QuantityOnHand <= ReorderPoint;
+
+    /// <summary>
+    /// Sets the quantity on hand directly. Used for external sync operations.
+    /// </summary>
+    public void SetQuantityOnHand(int quantity)
+    {
+        if (quantity < 0)
+            throw new ArgumentException("Quantity cannot be negative");
+        QuantityOnHand = quantity;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Updates the location for inventory sync.
+    /// </summary>
+    public void SetLocation(string? location)
+    {
+        Location = location;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Updates reorder settings.
+    /// </summary>
+    public void SetReorderSettings(int reorderPoint, int reorderQuantity)
+    {
+        ReorderPoint = reorderPoint;
+        ReorderQuantity = reorderQuantity;
+        UpdatedAt = DateTime.UtcNow;
+    }
 }

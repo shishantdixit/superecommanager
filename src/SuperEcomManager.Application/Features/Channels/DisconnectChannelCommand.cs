@@ -10,7 +10,7 @@ namespace SuperEcomManager.Application.Features.Channels;
 /// <summary>
 /// Command to disconnect a sales channel.
 /// </summary>
-[RequirePermission("channels.manage")]
+[RequirePermission("channels.disconnect")]
 [RequireFeature("channels_management")]
 public record DisconnectChannelCommand : IRequest<Result<bool>>, ITenantRequest
 {

@@ -25,7 +25,7 @@ import {
 } from '@/components/ui';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
 import { useProduct, useStockMovements, useAdjustStock } from '@/hooks';
-import type { StockMovementFilters, StockAdjustmentRequest } from '@/services/inventory.service';
+import { SyncStatus, type StockMovementFilters, type StockAdjustmentRequest } from '@/services/inventory.service';
 import type { StockMovementType } from '@/types/api';
 import {
   ArrowLeft,
@@ -39,6 +39,11 @@ import {
   Minus,
   RotateCcw,
   History,
+  CheckCircle,
+  Lock,
+  Clock,
+  AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
 
 const movementTypeOptions = [
@@ -486,6 +491,28 @@ export default function ProductDetailPage() {
                 </Badge>
               </div>
               <div className="mt-3 flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Sync Status</span>
+                <SyncStatusBadge syncStatus={product.syncStatus} />
+              </div>
+              {product.channelProductId && (
+                <div className="mt-2 flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Channel ID</span>
+                  <span className="text-sm font-mono">{product.channelProductId}</span>
+                </div>
+              )}
+              {product.channelSellingPrice !== undefined && product.channelSellingPrice !== product.sellingPrice && (
+                <div className="mt-2 rounded-md bg-warning/10 p-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Local Price</span>
+                    <span className="font-medium">{formatCurrency(product.sellingPrice)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Channel Price</span>
+                    <span className="font-medium text-warning">{formatCurrency(product.channelSellingPrice)}</span>
+                  </div>
+                </div>
+              )}
+              <div className="mt-3 flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Created</span>
                 <span className="text-sm">{formatDateTime(product.createdAt)}</span>
               </div>
@@ -493,6 +520,12 @@ export default function ProductDetailPage() {
                 <div className="mt-2 flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Updated</span>
                   <span className="text-sm">{formatDateTime(product.updatedAt)}</span>
+                </div>
+              )}
+              {product.lastSyncedAt && (
+                <div className="mt-2 flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Last Synced</span>
+                  <span className="text-sm">{formatDateTime(product.lastSyncedAt)}</span>
                 </div>
               )}
             </CardContent>
@@ -590,6 +623,40 @@ function MovementTypeBadge({ type }: { type: StockMovementType }) {
     <Badge variant={variant} size="sm" className="gap-1">
       {icon}
       {type}
+    </Badge>
+  );
+}
+
+function SyncStatusBadge({ syncStatus }: { syncStatus: SyncStatus }) {
+  const statusConfig = {
+    [SyncStatus.Synced]: {
+      icon: <CheckCircle className="h-3 w-3" />,
+      label: 'Synced',
+      variant: 'success' as const,
+    },
+    [SyncStatus.LocalOnly]: {
+      icon: <Lock className="h-3 w-3" />,
+      label: 'Local Only',
+      variant: 'default' as const,
+    },
+    [SyncStatus.Pending]: {
+      icon: <Clock className="h-3 w-3" />,
+      label: 'Pending Sync',
+      variant: 'warning' as const,
+    },
+    [SyncStatus.Conflict]: {
+      icon: <AlertCircle className="h-3 w-3" />,
+      label: 'Conflict',
+      variant: 'error' as const,
+    },
+  };
+
+  const config = statusConfig[syncStatus] || statusConfig[SyncStatus.Synced];
+
+  return (
+    <Badge variant={config.variant} size="sm" className="gap-1">
+      {config.icon}
+      {config.label}
     </Badge>
   );
 }

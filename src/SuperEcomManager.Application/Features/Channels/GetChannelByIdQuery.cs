@@ -45,7 +45,17 @@ public class GetChannelByIdQueryHandler : IRequestHandler<GetChannelByIdQuery, C
                 AutoSyncInventory = c.AutoSyncInventory,
                 IsConnected = c.IsConnected,
                 HasCredentials = c.ApiKey != null,
-                LastError = c.LastError
+                LastError = c.LastError,
+                InitialSyncDays = c.InitialSyncDays,
+                InventorySyncDays = c.InventorySyncDays,
+                ProductSyncDays = c.ProductSyncDays,
+                OrderSyncLimit = c.OrderSyncLimit,
+                InventorySyncLimit = c.InventorySyncLimit,
+                ProductSyncLimit = c.ProductSyncLimit,
+                SyncProductsEnabled = c.SyncProductsEnabled,
+                AutoSyncProducts = c.AutoSyncProducts,
+                LastProductSyncAt = c.LastProductSyncAt,
+                LastInventorySyncAt = c.LastInventorySyncAt
             })
             .FirstOrDefaultAsync(cancellationToken);
 

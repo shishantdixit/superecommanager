@@ -147,7 +147,7 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.HasIndex(o => o.OrderDate);
         builder.HasIndex(o => o.CreatedAt);
         builder.HasIndex(o => o.DeletedAt)
-            .HasFilter("deleted_at IS NULL");
+            .HasFilter("\"DeletedAt\" IS NULL");
 
         // Ignore domain events - they're not persisted
         builder.Ignore(o => o.DomainEvents);

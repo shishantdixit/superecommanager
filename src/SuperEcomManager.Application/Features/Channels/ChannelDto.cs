@@ -27,6 +27,11 @@ public class ChannelDto
 
     // Advanced sync settings
     public int? InitialSyncDays { get; set; }
+    public int? InventorySyncDays { get; set; }
+    public int? ProductSyncDays { get; set; }
+    public int? OrderSyncLimit { get; set; }
+    public int? InventorySyncLimit { get; set; }
+    public int? ProductSyncLimit { get; set; }
     public bool SyncProductsEnabled { get; set; }
     public bool AutoSyncProducts { get; set; }
     public DateTime? LastProductSyncAt { get; set; }
@@ -43,6 +48,11 @@ public class UpdateChannelSettingsRequest
 
     // Advanced sync settings
     public int? InitialSyncDays { get; set; }
+    public int? InventorySyncDays { get; set; }
+    public int? ProductSyncDays { get; set; }
+    public int? OrderSyncLimit { get; set; }
+    public int? InventorySyncLimit { get; set; }
+    public int? ProductSyncLimit { get; set; }
     public bool? SyncProductsEnabled { get; set; }
     public bool? AutoSyncProducts { get; set; }
 }
@@ -76,6 +86,15 @@ public class ShopifyOAuthCallback
     public string Code { get; set; } = string.Empty;
     public string State { get; set; } = string.Empty;
     public string Shop { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Request to save Shopify access token directly for Custom Apps.
+/// Custom Apps created in Shopify Admin provide access tokens directly without OAuth.
+/// </summary>
+public class SaveAccessTokenRequest
+{
+    public string AccessToken { get; set; } = string.Empty;
 }
 
 /// <summary>

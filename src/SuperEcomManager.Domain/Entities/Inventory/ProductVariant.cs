@@ -49,4 +49,29 @@ public class ProductVariant : AuditableEntity
         Option2Value = option2Value;
         UpdatedAt = DateTime.UtcNow;
     }
+
+    public void SetPricing(Money? costPrice, Money? sellingPrice)
+    {
+        CostPrice = costPrice;
+        SellingPrice = sellingPrice;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void SetWeight(decimal? weight)
+    {
+        Weight = weight;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void SetImageUrl(string? imageUrl)
+    {
+        ImageUrl = imageUrl;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void Update(string name)
+    {
+        Name = name;
+        UpdatedAt = DateTime.UtcNow;
+    }
 }

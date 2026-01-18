@@ -147,7 +147,17 @@ public class CompleteShopifyOAuthCommandHandler : IRequestHandler<CompleteShopif
             AutoSyncOrders = channel.AutoSyncOrders,
             AutoSyncInventory = channel.AutoSyncInventory,
             IsConnected = channel.IsConnected,
-            HasCredentials = true
+            HasCredentials = true,
+            InitialSyncDays = channel.InitialSyncDays,
+            InventorySyncDays = channel.InventorySyncDays,
+            ProductSyncDays = channel.ProductSyncDays,
+            OrderSyncLimit = channel.OrderSyncLimit,
+            InventorySyncLimit = channel.InventorySyncLimit,
+            ProductSyncLimit = channel.ProductSyncLimit,
+            SyncProductsEnabled = channel.SyncProductsEnabled,
+            AutoSyncProducts = channel.AutoSyncProducts,
+            LastProductSyncAt = channel.LastProductSyncAt,
+            LastInventorySyncAt = channel.LastInventorySyncAt
         });
     }
 

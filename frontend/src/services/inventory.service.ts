@@ -1,5 +1,20 @@
 import { get, post, put } from '@/lib/api-client';
-import type { PaginatedResponse, StockMovementType } from '@/types/api';
+import type { ApiResponse, PaginatedResponse, StockMovementType } from '@/types/api';
+
+// Sync status enum
+export enum SyncStatus {
+  Synced = 0,
+  LocalOnly = 1,
+  Pending = 2,
+  Conflict = 3,
+}
+
+// Sync mode for product updates
+export enum ProductSyncMode {
+  LocalOnly = 0,
+  PendingSync = 1,
+  SyncImmediately = 2,
+}
 
 // Product types
 export interface ProductListItem {
@@ -16,6 +31,10 @@ export interface ProductListItem {
   totalStock: number;
   variantCount: number;
   createdAt: string;
+  // Sync tracking
+  syncStatus: SyncStatus;
+  channelSellingPrice?: number;
+  lastSyncedAt?: string;
 }
 
 export interface ProductDetail {
@@ -35,6 +54,13 @@ export interface ProductDetail {
   taxRate?: number;
   createdAt: string;
   updatedAt?: string;
+  // Sync tracking
+  syncStatus: SyncStatus;
+  lastSyncedAt?: string;
+  channelProductId?: string;
+  channelSellingPrice?: number;
+  channelSellingCurrency?: string;
+  // Relations
   variants: ProductVariant[];
   inventorySummary?: InventorySummary;
 }
@@ -128,6 +154,7 @@ export interface ProductFilters {
   isLowStock?: boolean;
   minPrice?: number;
   maxPrice?: number;
+  syncStatus?: SyncStatus;
   page?: number;
   pageSize?: number;
   sortBy?: 'Name' | 'Sku' | 'Price' | 'Stock' | 'CreatedAt';
@@ -190,6 +217,7 @@ export interface UpdateProductRequest {
   hsnCode?: string;
   taxRate?: number;
   isActive: boolean;
+  syncMode?: ProductSyncMode;
 }
 
 export interface StockAdjustmentRequest {
@@ -205,50 +233,66 @@ export const inventoryService = {
   /**
    * Get paginated products with filters.
    */
-  getProducts: (filters: ProductFilters = {}) =>
-    get<PaginatedResponse<ProductListItem>>('/inventory/products', { params: filters }),
+  getProducts: async (filters: ProductFilters = {}) => {
+    const response = await get<ApiResponse<PaginatedResponse<ProductListItem>>>('/inventory/products', { params: filters });
+    return response.data;
+  },
 
   /**
    * Get product by ID.
    */
-  getProductById: (id: string) =>
-    get<ProductDetail>(`/inventory/products/${id}`),
+  getProductById: async (id: string) => {
+    const response = await get<ApiResponse<ProductDetail>>(`/inventory/products/${id}`);
+    return response.data;
+  },
 
   /**
    * Create a new product.
    */
-  createProduct: (data: CreateProductRequest) =>
-    post<ProductDetail, CreateProductRequest>('/inventory/products', data),
+  createProduct: async (data: CreateProductRequest) => {
+    const response = await post<ApiResponse<ProductDetail>, CreateProductRequest>('/inventory/products', data);
+    return response.data;
+  },
 
   /**
    * Update a product.
    */
-  updateProduct: (id: string, data: UpdateProductRequest) =>
-    put<ProductDetail, UpdateProductRequest>(`/inventory/products/${id}`, data),
+  updateProduct: async (id: string, data: UpdateProductRequest) => {
+    const response = await put<ApiResponse<ProductDetail>, UpdateProductRequest>(`/inventory/products/${id}`, data);
+    return response.data;
+  },
 
   /**
    * Get inventory statistics.
    */
-  getStats: () =>
-    get<InventoryStats>('/inventory/stats'),
+  getStats: async () => {
+    const response = await get<ApiResponse<InventoryStats>>('/inventory/stats');
+    return response.data;
+  },
 
   /**
    * Get low stock products.
    */
-  getLowStock: (page = 1, pageSize = 20) =>
-    get<PaginatedResponse<ProductListItem>>('/inventory/low-stock', {
+  getLowStock: async (page = 1, pageSize = 20) => {
+    const response = await get<ApiResponse<PaginatedResponse<ProductListItem>>>('/inventory/low-stock', {
       params: { page, pageSize },
-    }),
+    });
+    return response.data;
+  },
 
   /**
    * Adjust stock for an inventory item.
    */
-  adjustStock: (data: StockAdjustmentRequest) =>
-    post<InventoryItem, StockAdjustmentRequest>('/inventory/stock/adjust', data),
+  adjustStock: async (data: StockAdjustmentRequest) => {
+    const response = await post<ApiResponse<InventoryItem>, StockAdjustmentRequest>('/inventory/stock/adjust', data);
+    return response.data;
+  },
 
   /**
    * Get stock movements with filters.
    */
-  getStockMovements: (filters: StockMovementFilters = {}) =>
-    get<PaginatedResponse<StockMovement>>('/inventory/stock/movements', { params: filters }),
+  getStockMovements: async (filters: StockMovementFilters = {}) => {
+    const response = await get<ApiResponse<PaginatedResponse<StockMovement>>>('/inventory/stock/movements', { params: filters });
+    return response.data;
+  },
 };

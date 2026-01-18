@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ordersService, UpdateOrderStatusRequest, UpdateOrderNotesRequest, BulkUpdateRequest } from '@/services/orders.service';
+import { ordersService, UpdateOrderStatusRequest, UpdateOrderNotesRequest, BulkUpdateRequest, CreateOrderRequest, UpdateOrderRequest } from '@/services/orders.service';
 import type { OrderFilters } from '@/types/api';
 
 export const orderKeys = {
@@ -99,6 +99,53 @@ export function useBulkUpdateOrders() {
 
   return useMutation({
     mutationFn: (data: BulkUpdateRequest) => ordersService.bulkUpdate(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: orderKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: orderKeys.stats() });
+    },
+  });
+}
+
+/**
+ * Hook to create a new order.
+ */
+export function useCreateOrder() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data: CreateOrderRequest) => ordersService.createOrder(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: orderKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: orderKeys.stats() });
+    },
+  });
+}
+
+/**
+ * Hook to update an existing order.
+ */
+export function useUpdateOrder() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdateOrderRequest }) =>
+      ordersService.updateOrder(id, data),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: orderKeys.detail(id) });
+      queryClient.invalidateQueries({ queryKey: orderKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: orderKeys.stats() });
+    },
+  });
+}
+
+/**
+ * Hook to delete an order.
+ */
+export function useDeleteOrder() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => ordersService.deleteOrder(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: orderKeys.lists() });
       queryClient.invalidateQueries({ queryKey: orderKeys.stats() });

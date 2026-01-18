@@ -60,18 +60,105 @@ public class DatabaseSeeder
 
     private async Task SeedPermissionsAsync(ApplicationDbContext dbContext, CancellationToken cancellationToken)
     {
-        if (await dbContext.Permissions.AnyAsync(cancellationToken))
+        var existingPermissions = await dbContext.Permissions.ToListAsync(cancellationToken);
+        var existingCodes = existingPermissions.Select(p => p.Code).ToHashSet();
+
+        var allPermissions = Permission.CreateAllPermissions().ToList();
+        var newPermissions = allPermissions.Where(p => !existingCodes.Contains(p.Code)).ToList();
+
+        if (newPermissions.Count == 0)
         {
-            _logger.LogDebug("Permissions already seeded, skipping");
+            _logger.LogDebug("All permissions already seeded, skipping");
             return;
         }
 
-        _logger.LogInformation("Seeding permissions...");
+        _logger.LogInformation("Seeding {Count} new permissions...", newPermissions.Count);
 
-        var permissions = Permission.CreateAllPermissions().ToList();
-        dbContext.Permissions.AddRange(permissions);
+        dbContext.Permissions.AddRange(newPermissions);
 
-        _logger.LogInformation("Seeded {Count} permissions", permissions.Count);
+        _logger.LogInformation("Seeded {Count} new permissions (total: {Total})", newPermissions.Count, existingPermissions.Count + newPermissions.Count);
+    }
+
+    /// <summary>
+    /// Syncs permissions from shared schema to all tenant schemas and updates Owner roles.
+    /// </summary>
+    public async Task SyncPermissionsToTenantsAsync(CancellationToken cancellationToken = default)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var appDbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var currentTenantService = scope.ServiceProvider.GetRequiredService<ICurrentTenantService>();
+
+        // Get all active tenants
+        var allTenants = await appDbContext.Tenants.ToListAsync(cancellationToken);
+        var tenants = allTenants.Where(t => t.IsActive()).ToList();
+
+        var sharedPermissions = await appDbContext.Permissions.ToListAsync(cancellationToken);
+        _logger.LogInformation("Syncing {Count} permissions to {TenantCount} tenants", sharedPermissions.Count, tenants.Count);
+
+        foreach (var tenant in tenants)
+        {
+            try
+            {
+                // Set tenant context
+                currentTenantService.SetTenant(tenant.Id, tenant.SchemaName, tenant.Slug);
+
+                // Get tenant-scoped DbContext
+                using var tenantScope = _serviceProvider.CreateScope();
+                var tenantCurrentService = tenantScope.ServiceProvider.GetRequiredService<ICurrentTenantService>();
+                tenantCurrentService.SetTenant(tenant.Id, tenant.SchemaName, tenant.Slug);
+
+                var tenantDbContext = tenantScope.ServiceProvider.GetRequiredService<TenantDbContext>();
+
+                // Get existing permissions
+                var existingPermissions = await tenantDbContext.Permissions.ToListAsync(cancellationToken);
+                var existingCodes = existingPermissions.Select(p => p.Code).ToHashSet();
+
+                var newPermissions = sharedPermissions.Where(p => !existingCodes.Contains(p.Code)).ToList();
+
+                if (newPermissions.Count == 0)
+                {
+                    _logger.LogDebug("Tenant {TenantSlug}: No new permissions to sync", tenant.Slug);
+                    continue;
+                }
+
+                // Add new permissions
+                foreach (var perm in newPermissions)
+                {
+                    var tenantPerm = Permission.Create(perm.Code, perm.Name, perm.Module, perm.Description);
+                    tenantDbContext.Permissions.Add(tenantPerm);
+                }
+                await tenantDbContext.SaveChangesAsync(cancellationToken);
+
+                // Add to Owner role
+                var ownerRole = await tenantDbContext.Roles.FirstOrDefaultAsync(r => r.Name == "Owner", cancellationToken);
+                if (ownerRole != null)
+                {
+                    var tenantNewPerms = await tenantDbContext.Permissions
+                        .Where(p => newPermissions.Select(np => np.Code).Contains(p.Code))
+                        .ToListAsync(cancellationToken);
+
+                    // Check which permissions Owner already has
+                    var existingRolePermIds = await tenantDbContext.RolePermissions
+                        .Where(rp => rp.RoleId == ownerRole.Id)
+                        .Select(rp => rp.PermissionId)
+                        .ToListAsync(cancellationToken);
+
+                    foreach (var perm in tenantNewPerms.Where(p => !existingRolePermIds.Contains(p.Id)))
+                    {
+                        tenantDbContext.RolePermissions.Add(new RolePermission(ownerRole.Id, perm.Id));
+                    }
+                    await tenantDbContext.SaveChangesAsync(cancellationToken);
+                }
+
+                _logger.LogInformation("Tenant {TenantSlug}: Synced {Count} new permissions", tenant.Slug, newPermissions.Count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to sync permissions to tenant {TenantSlug}", tenant.Slug);
+            }
+        }
+
+        _logger.LogInformation("Permission sync completed for all tenants");
     }
 
     private async Task SeedPlansAsync(ApplicationDbContext dbContext, CancellationToken cancellationToken)

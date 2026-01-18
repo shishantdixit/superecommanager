@@ -20,6 +20,11 @@ public record ProductListDto
     public int TotalStock { get; init; }
     public int VariantCount { get; init; }
     public DateTime CreatedAt { get; init; }
+
+    // Sync tracking
+    public SyncStatus SyncStatus { get; init; } = SyncStatus.Synced;
+    public decimal? ChannelSellingPrice { get; init; }
+    public DateTime? LastSyncedAt { get; init; }
 }
 
 /// <summary>
@@ -43,6 +48,13 @@ public record ProductDetailDto
     public decimal? TaxRate { get; init; }
     public DateTime CreatedAt { get; init; }
     public DateTime? UpdatedAt { get; init; }
+
+    // Sync tracking
+    public SyncStatus SyncStatus { get; init; } = SyncStatus.Synced;
+    public DateTime? LastSyncedAt { get; init; }
+    public string? ChannelProductId { get; init; }
+    public decimal? ChannelSellingPrice { get; init; }
+    public string? ChannelSellingCurrency { get; init; }
 
     // Variants
     public List<ProductVariantDto> Variants { get; init; } = new();
@@ -134,6 +146,7 @@ public record ProductFilterDto
     public bool? IsLowStock { get; init; }
     public decimal? MinPrice { get; init; }
     public decimal? MaxPrice { get; init; }
+    public SyncStatus? SyncStatus { get; init; }
 }
 
 /// <summary>

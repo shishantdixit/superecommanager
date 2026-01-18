@@ -25,6 +25,7 @@ public class GetChannelsQueryHandler : IRequestHandler<GetChannelsQuery, IReadOn
     {
         var channels = await _dbContext.SalesChannels
             .AsNoTracking()
+            .Where(c => c.IsActive) // Only show active channels
             .Select(c => new ChannelDto
             {
                 Id = c.Id,
@@ -43,6 +44,11 @@ public class GetChannelsQueryHandler : IRequestHandler<GetChannelsQuery, IReadOn
                 HasCredentials = c.ApiKey != null,
                 LastError = c.LastError,
                 InitialSyncDays = c.InitialSyncDays,
+                InventorySyncDays = c.InventorySyncDays,
+                ProductSyncDays = c.ProductSyncDays,
+                OrderSyncLimit = c.OrderSyncLimit,
+                InventorySyncLimit = c.InventorySyncLimit,
+                ProductSyncLimit = c.ProductSyncLimit,
                 SyncProductsEnabled = c.SyncProductsEnabled,
                 AutoSyncProducts = c.AutoSyncProducts,
                 LastProductSyncAt = c.LastProductSyncAt,

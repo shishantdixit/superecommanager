@@ -25,6 +25,7 @@ public class InventoryController : ApiControllerBase
         [FromQuery] bool? isLowStock,
         [FromQuery] decimal? minPrice,
         [FromQuery] decimal? maxPrice,
+        [FromQuery] SyncStatus? syncStatus,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         [FromQuery] ProductSortBy sortBy = ProductSortBy.Name,
@@ -40,7 +41,8 @@ public class InventoryController : ApiControllerBase
                 IsActive = isActive,
                 IsLowStock = isLowStock,
                 MinPrice = minPrice,
-                MaxPrice = maxPrice
+                MaxPrice = maxPrice,
+                SyncStatus = syncStatus
             },
             Page = page,
             PageSize = pageSize,
@@ -117,7 +119,8 @@ public class InventoryController : ApiControllerBase
             ImageUrl = request.ImageUrl,
             HsnCode = request.HsnCode,
             TaxRate = request.TaxRate,
-            IsActive = request.IsActive
+            IsActive = request.IsActive,
+            SyncMode = request.SyncMode
         });
 
         if (result.IsFailure)
@@ -253,4 +256,10 @@ public record UpdateProductRequest
     public string? HsnCode { get; init; }
     public decimal? TaxRate { get; init; }
     public bool IsActive { get; init; }
+
+    /// <summary>
+    /// Sync mode: LocalOnly (0), PendingSync (1), or SyncImmediately (2).
+    /// Default is PendingSync.
+    /// </summary>
+    public ProductSyncMode SyncMode { get; init; } = ProductSyncMode.PendingSync;
 }

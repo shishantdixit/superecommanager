@@ -56,6 +56,6 @@ public class TenantConfiguration : IEntityTypeConfiguration<Domain.Entities.Tena
 
         // Soft delete index for performance
         builder.HasIndex(t => t.DeletedAt)
-            .HasFilter("deleted_at IS NULL");
+            .HasFilter("\"DeletedAt\" IS NULL");
     }
 }

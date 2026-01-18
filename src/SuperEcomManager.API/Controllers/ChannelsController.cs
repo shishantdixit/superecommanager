@@ -132,6 +132,30 @@ public class ChannelsController : ApiControllerBase
     }
 
     /// <summary>
+    /// Save Shopify access token directly for Custom Apps.
+    /// Use this when you have a Custom App created in Shopify Admin that provides
+    /// the access token directly without OAuth.
+    /// </summary>
+    [HttpPost("{id:guid}/shopify/access-token")]
+    [ProducesResponseType(typeof(ApiResponse<ChannelDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ApiResponse<ChannelDto>>> SaveShopifyAccessToken(
+        Guid id,
+        [FromBody] SaveAccessTokenRequest request)
+    {
+        var result = await Mediator.Send(new SaveShopifyAccessTokenCommand
+        {
+            ChannelId = id,
+            AccessToken = request.AccessToken
+        });
+
+        if (!result.IsSuccess)
+            return BadRequestResponse<ChannelDto>(result.Errors.FirstOrDefault() ?? "Failed to save access token");
+
+        return OkResponse(result.Value!);
+    }
+
+    /// <summary>
     /// Disconnect a sales channel.
     /// </summary>
     [HttpDelete("{id:guid}")]
@@ -148,7 +172,7 @@ public class ChannelsController : ApiControllerBase
     }
 
     /// <summary>
-    /// Trigger manual sync for a channel.
+    /// Trigger manual order sync for a channel.
     /// </summary>
     [HttpPost("{id:guid}/sync")]
     [ProducesResponseType(typeof(ApiResponse<ChannelSyncResult>), StatusCodes.Status200OK)]
@@ -159,6 +183,57 @@ public class ChannelsController : ApiControllerBase
 
         if (!result.IsSuccess)
             return BadRequestResponse<ChannelSyncResult>(result.Errors.FirstOrDefault() ?? "Sync failed");
+
+        return OkResponse(result.Value!);
+    }
+
+    /// <summary>
+    /// Trigger manual inventory sync for a channel.
+    /// Pulls inventory levels from the external channel and updates local inventory.
+    /// </summary>
+    [HttpPost("{id:guid}/sync/inventory")]
+    [ProducesResponseType(typeof(ApiResponse<ChannelSyncResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ApiResponse<ChannelSyncResult>>> SyncInventory(Guid id)
+    {
+        var result = await Mediator.Send(new SyncInventoryCommand { ChannelId = id });
+
+        if (!result.IsSuccess)
+            return BadRequestResponse<ChannelSyncResult>(result.Errors.FirstOrDefault() ?? "Inventory sync failed");
+
+        return OkResponse(result.Value!);
+    }
+
+    /// <summary>
+    /// Trigger manual product sync for a channel.
+    /// Imports products and creates local inventory records.
+    /// </summary>
+    [HttpPost("{id:guid}/sync/products")]
+    [ProducesResponseType(typeof(ApiResponse<ChannelSyncResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ApiResponse<ChannelSyncResult>>> SyncProducts(Guid id)
+    {
+        var result = await Mediator.Send(new SyncProductsCommand { ChannelId = id });
+
+        if (!result.IsSuccess)
+            return BadRequestResponse<ChannelSyncResult>(result.Errors.FirstOrDefault() ?? "Product sync failed");
+
+        return OkResponse(result.Value!);
+    }
+
+    /// <summary>
+    /// Get Shopify locations for a channel.
+    /// Used to verify read_locations permission is working.
+    /// </summary>
+    [HttpGet("{id:guid}/shopify/locations")]
+    [ProducesResponseType(typeof(ApiResponse<List<ShopifyLocationDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ApiResponse<List<ShopifyLocationDto>>>> GetShopifyLocations(Guid id)
+    {
+        var result = await Mediator.Send(new GetShopifyLocationsQuery { ChannelId = id });
+
+        if (!result.IsSuccess)
+            return BadRequestResponse<List<ShopifyLocationDto>>(result.Errors.FirstOrDefault() ?? "Failed to get locations");
 
         return OkResponse(result.Value!);
     }
@@ -180,6 +255,9 @@ public class ChannelsController : ApiControllerBase
             AutoSyncOrders = request.AutoSyncOrders,
             AutoSyncInventory = request.AutoSyncInventory,
             InitialSyncDays = request.InitialSyncDays,
+            InventorySyncDays = request.InventorySyncDays,
+            OrderSyncLimit = request.OrderSyncLimit,
+            InventorySyncLimit = request.InventorySyncLimit,
             SyncProductsEnabled = request.SyncProductsEnabled,
             AutoSyncProducts = request.AutoSyncProducts
         });

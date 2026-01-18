@@ -130,6 +130,31 @@ public class DatabaseManagementController : ControllerBase
     }
 
     /// <summary>
+    /// Sync permissions from shared schema to all tenant schemas.
+    /// Also adds new permissions to Owner roles.
+    /// </summary>
+    [HttpPost("sync/permissions")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> SyncPermissions(CancellationToken cancellationToken)
+    {
+        try
+        {
+            // First seed shared data to ensure all permissions exist
+            await _databaseSeeder.SeedSharedDataAsync(cancellationToken);
+
+            // Then sync to all tenants
+            await _databaseSeeder.SyncPermissionsToTenantsAsync(cancellationToken);
+
+            return Ok(new { message = "Permissions synced to all tenants successfully" });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// Run full database initialization (migrations + seeding).
     /// </summary>
     [HttpPost("initialize")]

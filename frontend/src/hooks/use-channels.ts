@@ -68,13 +68,43 @@ export function useDisconnectChannel() {
 }
 
 /**
- * Hook to trigger manual sync for a channel.
+ * Hook to trigger manual order sync for a channel.
  */
 export function useSyncChannel() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (id: string) => channelsService.syncChannel(id),
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: channelKeys.detail(id) });
+      queryClient.invalidateQueries({ queryKey: channelKeys.lists() });
+    },
+  });
+}
+
+/**
+ * Hook to trigger manual inventory sync for a channel.
+ */
+export function useSyncInventory() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => channelsService.syncInventory(id),
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: channelKeys.detail(id) });
+      queryClient.invalidateQueries({ queryKey: channelKeys.lists() });
+    },
+  });
+}
+
+/**
+ * Hook to trigger manual product sync for a channel.
+ */
+export function useSyncProducts() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => channelsService.syncProducts(id),
     onSuccess: (_, id) => {
       queryClient.invalidateQueries({ queryKey: channelKeys.detail(id) });
       queryClient.invalidateQueries({ queryKey: channelKeys.lists() });

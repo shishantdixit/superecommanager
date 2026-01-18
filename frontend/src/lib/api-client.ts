@@ -77,7 +77,8 @@ function createApiClient(): AxiosInstance {
     headers: {
       'Content-Type': 'application/json',
     },
-    timeout: 30000,
+    // Increased timeout to 120 seconds for long-running operations like product sync
+    timeout: 120000,
   });
 
   // Request interceptor - add auth token and tenant slug

@@ -66,6 +66,9 @@ public class GetProductsQueryHandler : IRequestHandler<GetProductsQuery, Result<
 
             if (filter.MaxPrice.HasValue)
                 query = query.Where(p => p.SellingPrice.Amount <= filter.MaxPrice.Value);
+
+            if (filter.SyncStatus.HasValue)
+                query = query.Where(p => p.SyncStatus == filter.SyncStatus.Value);
         }
 
         // Get total count
@@ -118,7 +121,10 @@ public class GetProductsQueryHandler : IRequestHandler<GetProductsQuery, Result<
             ImageUrl = p.ImageUrl,
             TotalStock = inventoryData.GetValueOrDefault(p.Id, 0),
             VariantCount = p.Variants.Count,
-            CreatedAt = p.CreatedAt
+            CreatedAt = p.CreatedAt,
+            SyncStatus = p.SyncStatus,
+            ChannelSellingPrice = p.ChannelSellingPrice?.Amount,
+            LastSyncedAt = p.LastSyncedAt
         }).ToList();
 
         var result = new PaginatedResult<ProductListDto>(

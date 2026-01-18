@@ -65,6 +65,31 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
                 .HasMaxLength(3);
         });
 
+        // Sync tracking fields
+        builder.Property(p => p.SyncStatus)
+            .HasColumnName("sync_status")
+            .HasDefaultValue(Domain.Enums.SyncStatus.Synced);
+
+        builder.Property(p => p.LastSyncedAt)
+            .HasColumnName("last_synced_at");
+
+        builder.Property(p => p.ChannelProductId)
+            .HasColumnName("channel_product_id")
+            .HasMaxLength(100);
+
+        builder.OwnsOne(p => p.ChannelSellingPrice, money =>
+        {
+            money.Property(m => m.Amount)
+                .HasColumnName("channel_selling_price")
+                .HasPrecision(18, 2);
+            money.Property(m => m.Currency)
+                .HasColumnName("channel_selling_currency")
+                .HasMaxLength(3);
+        });
+
+        builder.HasIndex(p => p.SyncStatus);
+        builder.HasIndex(p => p.ChannelProductId);
+
         builder.HasMany(p => p.Variants)
             .WithOne(v => v.Product)
             .HasForeignKey(v => v.ProductId)

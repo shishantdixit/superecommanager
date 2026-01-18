@@ -23,9 +23,22 @@ public record SyncChannelCommand : IRequest<Result<ChannelSyncResult>>, ITenantR
 public class ChannelSyncResult
 {
     public Guid ChannelId { get; set; }
+
+    // Order sync results
     public int OrdersImported { get; set; }
     public int OrdersUpdated { get; set; }
     public int OrdersFailed { get; set; }
+
+    // Product sync results
+    public int ProductsImported { get; set; }
+    public int ProductsUpdated { get; set; }
+    public int ProductsFailed { get; set; }
+
+    // Inventory sync results
+    public int InventoryUpdated { get; set; }
+    public int InventorySkipped { get; set; }
+    public int InventoryFailed { get; set; }
+
     public DateTime SyncedAt { get; set; }
     public string Status { get; set; } = "Completed";
     public List<string> Errors { get; set; } = new();

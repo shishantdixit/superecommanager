@@ -68,6 +68,7 @@ public class Permission : BaseEntity
         yield return Create("channels.connect", "Connect Channels", "channels", "Connect new sales channels");
         yield return Create("channels.disconnect", "Disconnect Channels", "channels", "Disconnect channels");
         yield return Create("channels.settings", "Channel Settings", "channels", "Manage channel settings");
+        yield return Create("channels.sync", "Sync Channels", "channels", "Trigger manual order and inventory sync");
 
         // Team module
         yield return Create("team.view", "View Team", "team", "View team members");

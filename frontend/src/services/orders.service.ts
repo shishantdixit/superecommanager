@@ -1,4 +1,4 @@
-import { get, post, put } from '@/lib/api-client';
+import { get, post, put, del } from '@/lib/api-client';
 import type { Order, OrderFilters, PaginatedResponse, OrderStatus, ApiResponse } from '@/types/api';
 
 export interface OrderStats {
@@ -26,6 +26,64 @@ export interface BulkUpdateRequest {
   orderIds: string[];
   status?: OrderStatus;
   notes?: string;
+}
+
+export interface CreateAddressInput {
+  name: string;
+  line1: string;
+  line2?: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  country: string;
+  phone?: string;
+}
+
+export interface CreateOrderItemInput {
+  sku: string;
+  name: string;
+  variantName?: string;
+  quantity: number;
+  unitPrice: number;
+  discountAmount: number;
+  taxAmount: number;
+}
+
+export interface CreateOrderRequest {
+  customerName: string;
+  customerEmail?: string;
+  customerPhone?: string;
+  shippingAddress: CreateAddressInput;
+  billingAddress?: CreateAddressInput;
+  items: CreateOrderItemInput[];
+  paymentMethod: 'COD' | 'UPI' | 'Card' | 'NetBanking' | 'Wallet' | 'EMI' | 'Other';
+  paymentStatus: 'Pending' | 'Paid' | 'PartiallyPaid' | 'Failed' | 'Refunded' | 'PartiallyRefunded';
+  shippingAmount: number;
+  discountAmount: number;
+  taxAmount: number;
+  currency: string;
+  customerNotes?: string;
+  internalNotes?: string;
+  channelId?: string;
+}
+
+export interface UpdateOrderRequest {
+  customerName: string;
+  customerEmail?: string;
+  customerPhone?: string;
+  shippingAddress: CreateAddressInput;
+  billingAddress?: CreateAddressInput;
+  items: CreateOrderItemInput[];
+  paymentMethod: 'COD' | 'UPI' | 'Card' | 'NetBanking' | 'Wallet' | 'EMI' | 'Other';
+  paymentStatus: 'Pending' | 'Paid' | 'PartiallyPaid' | 'Failed' | 'Refunded' | 'PartiallyRefunded';
+  shippingAmount: number;
+  discountAmount: number;
+  taxAmount: number;
+  currency: string;
+  customerNotes?: string;
+  internalNotes?: string;
+  /** Whether to sync changes to the external channel (e.g., Shopify) */
+  syncToChannel?: boolean;
 }
 
 /**
@@ -108,6 +166,30 @@ export const ordersService = {
     locationIds?: string[];
   }) => {
     const response = await post<ApiResponse<PaginatedResponse<Order>>, typeof filters>('/orders/filter', filters);
+    return response.data;
+  },
+
+  /**
+   * Create a new manual order.
+   */
+  createOrder: async (data: CreateOrderRequest) => {
+    const response = await post<ApiResponse<Order>, CreateOrderRequest>('/orders', data);
+    return response.data;
+  },
+
+  /**
+   * Update an existing order.
+   */
+  updateOrder: async (id: string, data: UpdateOrderRequest) => {
+    const response = await put<ApiResponse<Order>, UpdateOrderRequest>(`/orders/${id}`, data);
+    return response.data;
+  },
+
+  /**
+   * Delete an order (soft delete).
+   */
+  deleteOrder: async (id: string) => {
+    const response = await del<ApiResponse<boolean>>(`/orders/${id}`);
     return response.data;
   },
 };

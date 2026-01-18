@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { DashboardLayout } from '@/components/layout';
 import {
@@ -23,9 +23,9 @@ import {
   SectionLoader,
 } from '@/components/ui';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
-import { useOrders, useOrderStats } from '@/hooks';
+import { useOrders, useOrderStats, useChannels, useSyncChannel } from '@/hooks';
 import type { OrderFilters, OrderStatus, PaymentStatus } from '@/types/api';
-import { Search, Filter, Download, Plus, Eye, Truck, MoreHorizontal, Package } from 'lucide-react';
+import { Search, Filter, Download, Plus, Eye, Truck, MoreHorizontal, Package, RefreshCw, ChevronDown, Loader2 } from 'lucide-react';
 
 const statusOptions = [
   { value: '', label: 'All Statuses' },
@@ -35,14 +35,6 @@ const statusOptions = [
   { value: 'Shipped', label: 'Shipped' },
   { value: 'Delivered', label: 'Delivered' },
   { value: 'Cancelled', label: 'Cancelled' },
-];
-
-const channelOptions = [
-  { value: '', label: 'All Channels' },
-  { value: 'Shopify', label: 'Shopify' },
-  { value: 'Amazon', label: 'Amazon' },
-  { value: 'Flipkart', label: 'Flipkart' },
-  { value: 'Meesho', label: 'Meesho' },
 ];
 
 const paymentOptions = [
@@ -60,6 +52,9 @@ export default function OrdersPage() {
     pageSize: 10,
   });
   const [searchQuery, setSearchQuery] = useState('');
+  const [showSyncMenu, setShowSyncMenu] = useState(false);
+  const [syncingChannelId, setSyncingChannelId] = useState<string | null>(null);
+  const syncMenuRef = useRef<HTMLDivElement>(null);
 
   // Build API filters
   const apiFilters: OrderFilters = {
@@ -69,8 +64,47 @@ export default function OrdersPage() {
 
   const { data, isLoading, error } = useOrders(apiFilters);
   const { data: stats } = useOrderStats();
+  const { data: channels } = useChannels();
+  const syncChannel = useSyncChannel();
+
+  // Connected channels only
+  const connectedChannels = channels?.filter(c => c.isConnected) || [];
+
+  // Close sync menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (syncMenuRef.current && !syncMenuRef.current.contains(event.target as Node)) {
+        setShowSyncMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleSyncChannel = async (channelId: string) => {
+    setSyncingChannelId(channelId);
+    try {
+      await syncChannel.mutateAsync(channelId);
+    } catch (err: unknown) {
+      const errorMessage = (err as { message?: string })?.message || 'Unknown error';
+      console.error('Failed to sync orders:', errorMessage);
+      alert(`Failed to sync orders: ${errorMessage}`);
+    } finally {
+      setSyncingChannelId(null);
+      setShowSyncMenu(false);
+    }
+  };
 
   const orders = data?.items || [];
+
+  // Build dynamic channel options from fetched channels
+  const channelOptions = [
+    { value: '', label: 'All Channels' },
+    ...(channels || []).map((channel) => ({
+      value: channel.id,
+      label: channel.name,
+    })),
+  ];
   const totalItems = data?.totalCount || 0;
   const totalPages = data?.totalPages || 1;
 
@@ -106,12 +140,52 @@ export default function OrdersPage() {
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>All Orders</CardTitle>
           <div className="flex items-center gap-2">
+            {/* Sync Orders Dropdown */}
+            {connectedChannels.length > 0 && (
+              <div className="relative" ref={syncMenuRef}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowSyncMenu(!showSyncMenu)}
+                  leftIcon={<RefreshCw className="h-4 w-4" />}
+                  rightIcon={<ChevronDown className="h-3 w-3" />}
+                >
+                  Sync Orders
+                </Button>
+                {showSyncMenu && (
+                  <div className="absolute right-0 top-full z-50 mt-1 w-56 rounded-md border bg-background shadow-lg">
+                    <div className="p-2">
+                      <p className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+                        Select channel to sync
+                      </p>
+                      {connectedChannels.map((channel) => (
+                        <button
+                          key={channel.id}
+                          onClick={() => handleSyncChannel(channel.id)}
+                          disabled={syncingChannelId !== null}
+                          className="flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
+                        >
+                          <span>{channel.name}</span>
+                          {syncingChannelId === channel.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <RefreshCw className="h-3 w-3 text-muted-foreground" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             <Button variant="outline" size="sm" leftIcon={<Download className="h-4 w-4" />}>
               Export
             </Button>
-            <Button size="sm" leftIcon={<Plus className="h-4 w-4" />}>
-              Create Order
-            </Button>
+            <Link href="/orders/new">
+              <Button size="sm" leftIcon={<Plus className="h-4 w-4" />}>
+                Create Order
+              </Button>
+            </Link>
           </div>
         </CardHeader>
         <CardContent>
@@ -136,9 +210,9 @@ export default function OrdersPage() {
                 />
                 <Select
                   options={channelOptions}
-                  value={filters.channelType || ''}
-                  onChange={(e) => handleFilterChange('channelType', e.target.value)}
-                  className="w-32"
+                  value={filters.channelId || ''}
+                  onChange={(e) => handleFilterChange('channelId', e.target.value)}
+                  className="w-40"
                 />
                 <Select
                   options={paymentOptions}
@@ -152,7 +226,7 @@ export default function OrdersPage() {
               </div>
             </div>
             {/* Active Filters */}
-            {(filters.status || filters.channelType || filters.paymentStatus || searchQuery) && (
+            {(filters.status || filters.channelId || filters.paymentStatus || searchQuery) && (
               <div className="flex items-center gap-2 text-sm">
                 <span className="text-muted-foreground">Active filters:</span>
                 {searchQuery && (
@@ -167,10 +241,10 @@ export default function OrdersPage() {
                     <button onClick={() => handleFilterChange('status', '')} className="ml-1 hover:text-primary">&times;</button>
                   </span>
                 )}
-                {filters.channelType && (
+                {filters.channelId && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-xs">
-                    {filters.channelType}
-                    <button onClick={() => handleFilterChange('channelType', '')} className="ml-1 hover:text-primary">&times;</button>
+                    {channels?.find((c) => c.id === filters.channelId)?.name || 'Channel'}
+                    <button onClick={() => handleFilterChange('channelId', '')} className="ml-1 hover:text-primary">&times;</button>
                   </span>
                 )}
                 {filters.paymentStatus && (
@@ -243,7 +317,7 @@ export default function OrdersPage() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <ChannelBadge channel={order.channelType} />
+                          <ChannelBadge name={order.channelName} type={order.channelType} />
                         </TableCell>
                         <TableCell>
                           <OrderStatusBadge status={order.status} />
@@ -252,7 +326,7 @@ export default function OrdersPage() {
                           <PaymentBadge status={order.paymentStatus} />
                         </TableCell>
                         <TableCell className="text-right font-medium">
-                          {formatCurrency(order.total)}
+                          {formatCurrency(order.totalAmount)}
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {formatDateTime(order.createdAt)}
@@ -351,21 +425,24 @@ function PaymentBadge({ status }: { status: string }) {
   );
 }
 
-function ChannelBadge({ channel }: { channel: string }) {
+function ChannelBadge({ name, type }: { name: string; type: string }) {
   const colors: Record<string, string> = {
     Shopify: 'bg-green-100 text-green-700',
     Amazon: 'bg-orange-100 text-orange-700',
     Flipkart: 'bg-yellow-100 text-yellow-700',
     Meesho: 'bg-pink-100 text-pink-700',
+    WooCommerce: 'bg-purple-100 text-purple-700',
+    Custom: 'bg-blue-100 text-blue-700',
   };
 
   return (
     <span
       className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-        colors[channel] || 'bg-gray-100 text-gray-700'
+        colors[type] || 'bg-gray-100 text-gray-700'
       }`}
+      title={type !== 'Custom' ? `${type} - ${name}` : name}
     >
-      {channel}
+      {name}
     </span>
   );
 }

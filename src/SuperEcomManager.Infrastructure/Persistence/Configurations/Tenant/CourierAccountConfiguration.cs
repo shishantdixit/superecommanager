@@ -53,6 +53,6 @@ public class CourierAccountConfiguration : IEntityTypeConfiguration<CourierAccou
         builder.HasIndex(c => c.IsDefault);
         builder.HasIndex(c => new { c.CourierType, c.IsActive });
         builder.HasIndex(c => c.DeletedAt)
-            .HasFilter("deleted_at IS NULL");
+            .HasFilter("\"DeletedAt\" IS NULL");
     }
 }

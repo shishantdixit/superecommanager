@@ -114,6 +114,11 @@ public class GetProductByIdQueryHandler : IRequestHandler<GetProductByIdQuery, R
             TaxRate = product.TaxRate,
             CreatedAt = product.CreatedAt,
             UpdatedAt = product.UpdatedAt,
+            SyncStatus = product.SyncStatus,
+            LastSyncedAt = product.LastSyncedAt,
+            ChannelProductId = product.ChannelProductId,
+            ChannelSellingPrice = product.ChannelSellingPrice?.Amount,
+            ChannelSellingCurrency = product.ChannelSellingPrice?.Currency,
             Variants = variantDtos,
             InventorySummary = inventorySummary
         };

@@ -16,7 +16,7 @@ import {
   Modal,
 } from '@/components/ui';
 import { formatDateTime } from '@/lib/utils';
-import { useChannels, useConnectShopify, useDisconnectChannel, useSyncChannel, useUpdateChannelSettings } from '@/hooks';
+import { useChannels, useConnectShopify, useDisconnectChannel, useSyncChannel, useSyncInventory, useSyncProducts, useUpdateChannelSettings } from '@/hooks';
 import type { Channel } from '@/services/channels.service';
 import {
   Store,
@@ -33,6 +33,8 @@ import {
   Package,
   Zap,
   Shield,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 
 export default function ChannelSettingsPage() {
@@ -48,14 +50,26 @@ export default function ChannelSettingsPage() {
   const [autoSyncOrders, setAutoSyncOrders] = useState(true);
   const [autoSyncInventory, setAutoSyncInventory] = useState(false);
   const [initialSyncDays, setInitialSyncDays] = useState<number | null>(7);
+  const [inventorySyncDays, setInventorySyncDays] = useState<number | null>(7);
+  const [productSyncDays, setProductSyncDays] = useState<number | null>(7);
+  const [orderSyncLimit, setOrderSyncLimit] = useState<number | null>(100);
+  const [inventorySyncLimit, setInventorySyncLimit] = useState<number | null>(500);
+  const [productSyncLimit, setProductSyncLimit] = useState<number | null>(50);
   const [syncProductsEnabled, setSyncProductsEnabled] = useState(false);
   const [autoSyncProducts, setAutoSyncProducts] = useState(false);
   const [settingsChanged, setSettingsChanged] = useState(false);
+
+  // Expand/collapse state for sync sections
+  const [orderSyncExpanded, setOrderSyncExpanded] = useState(false);
+  const [inventorySyncExpanded, setInventorySyncExpanded] = useState(false);
+  const [productSyncExpanded, setProductSyncExpanded] = useState(false);
 
   const { data: channels, isLoading, refetch } = useChannels();
   const connectShopify = useConnectShopify();
   const disconnectChannel = useDisconnectChannel();
   const syncChannel = useSyncChannel();
+  const syncInventory = useSyncInventory();
+  const syncProducts = useSyncProducts();
   const updateSettings = useUpdateChannelSettings();
 
   // Find the specific channel by ID
@@ -67,6 +81,11 @@ export default function ChannelSettingsPage() {
       setAutoSyncOrders(channel.autoSyncOrders ?? true);
       setAutoSyncInventory(channel.autoSyncInventory ?? false);
       setInitialSyncDays(channel.initialSyncDays ?? 7);
+      setInventorySyncDays(channel.inventorySyncDays ?? 7);
+      setProductSyncDays(channel.productSyncDays ?? 7);
+      setOrderSyncLimit(channel.orderSyncLimit ?? 100);
+      setInventorySyncLimit(channel.inventorySyncLimit ?? 500);
+      setProductSyncLimit(channel.productSyncLimit ?? 50);
       setSyncProductsEnabled(channel.syncProductsEnabled ?? false);
       setAutoSyncProducts(channel.autoSyncProducts ?? false);
     }
@@ -108,7 +127,31 @@ export default function ChannelSettingsPage() {
     try {
       await syncChannel.mutateAsync(channel.id);
     } catch (err) {
-      console.error('Failed to sync:', err);
+      console.error('Failed to sync orders:', err);
+    }
+  };
+
+  const handleSyncInventory = async () => {
+    if (!channel) return;
+
+    try {
+      const result = await syncInventory.mutateAsync(channel.id);
+      console.log('Inventory sync completed:', result);
+    } catch (err: unknown) {
+      const error = err as { message?: string; statusCode?: number };
+      console.error('Failed to sync inventory:', error.message || JSON.stringify(err));
+    }
+  };
+
+  const handleSyncProducts = async () => {
+    if (!channel) return;
+
+    try {
+      const result = await syncProducts.mutateAsync(channel.id);
+      console.log('Product sync completed:', result);
+    } catch (err: unknown) {
+      const error = err as { message?: string; statusCode?: number };
+      console.error('Failed to sync products:', error.message || JSON.stringify(err));
     }
   };
 
@@ -121,6 +164,11 @@ export default function ChannelSettingsPage() {
         autoSyncOrders,
         autoSyncInventory,
         initialSyncDays,
+        inventorySyncDays,
+        productSyncDays,
+        orderSyncLimit,
+        inventorySyncLimit,
+        productSyncLimit,
         syncProductsEnabled,
         autoSyncProducts,
       });
@@ -145,6 +193,31 @@ export default function ChannelSettingsPage() {
 
   const handleInitialSyncDaysChange = (value: number | null) => {
     setInitialSyncDays(value);
+    setSettingsChanged(true);
+  };
+
+  const handleInventorySyncDaysChange = (value: number | null) => {
+    setInventorySyncDays(value);
+    setSettingsChanged(true);
+  };
+
+  const handleOrderSyncLimitChange = (value: number | null) => {
+    setOrderSyncLimit(value);
+    setSettingsChanged(true);
+  };
+
+  const handleInventorySyncLimitChange = (value: number | null) => {
+    setInventorySyncLimit(value);
+    setSettingsChanged(true);
+  };
+
+  const handleProductSyncDaysChange = (value: number | null) => {
+    setProductSyncDays(value);
+    setSettingsChanged(true);
+  };
+
+  const handleProductSyncLimitChange = (value: number | null) => {
+    setProductSyncLimit(value);
     setSettingsChanged(true);
   };
 
@@ -213,16 +286,36 @@ export default function ChannelSettingsPage() {
           autoSyncOrders={autoSyncOrders}
           autoSyncInventory={autoSyncInventory}
           initialSyncDays={initialSyncDays}
+          inventorySyncDays={inventorySyncDays}
+          productSyncDays={productSyncDays}
+          orderSyncLimit={orderSyncLimit}
+          inventorySyncLimit={inventorySyncLimit}
+          productSyncLimit={productSyncLimit}
           syncProductsEnabled={syncProductsEnabled}
           autoSyncProducts={autoSyncProducts}
           settingsChanged={settingsChanged}
+          orderSyncExpanded={orderSyncExpanded}
+          inventorySyncExpanded={inventorySyncExpanded}
+          productSyncExpanded={productSyncExpanded}
           onSettingChange={handleSettingChange}
           onInitialSyncDaysChange={handleInitialSyncDaysChange}
+          onInventorySyncDaysChange={handleInventorySyncDaysChange}
+          onProductSyncDaysChange={handleProductSyncDaysChange}
+          onOrderSyncLimitChange={handleOrderSyncLimitChange}
+          onInventorySyncLimitChange={handleInventorySyncLimitChange}
+          onProductSyncLimitChange={handleProductSyncLimitChange}
+          onOrderSyncExpandedChange={setOrderSyncExpanded}
+          onInventorySyncExpandedChange={setInventorySyncExpanded}
+          onProductSyncExpandedChange={setProductSyncExpanded}
           onSaveSettings={handleSaveSettings}
           onSync={handleSync}
+          onSyncInventory={handleSyncInventory}
+          onSyncProducts={handleSyncProducts}
           onDisconnect={() => setShowDisconnectModal(true)}
           isSaving={updateSettings.isPending}
           isSyncing={syncChannel.isPending}
+          isSyncingInventory={syncInventory.isPending}
+          isSyncingProducts={syncProducts.isPending}
         />
       ) : hasCredentials ? (
         // Has credentials but not connected - Show connect button
@@ -391,31 +484,71 @@ function ConnectedView({
   autoSyncOrders,
   autoSyncInventory,
   initialSyncDays,
+  inventorySyncDays,
+  productSyncDays,
+  orderSyncLimit,
+  inventorySyncLimit,
+  productSyncLimit,
   syncProductsEnabled,
   autoSyncProducts,
   settingsChanged,
+  orderSyncExpanded,
+  inventorySyncExpanded,
+  productSyncExpanded,
   onSettingChange,
   onInitialSyncDaysChange,
+  onInventorySyncDaysChange,
+  onProductSyncDaysChange,
+  onOrderSyncLimitChange,
+  onInventorySyncLimitChange,
+  onProductSyncLimitChange,
+  onOrderSyncExpandedChange,
+  onInventorySyncExpandedChange,
+  onProductSyncExpandedChange,
   onSaveSettings,
   onSync,
+  onSyncInventory,
+  onSyncProducts,
   onDisconnect,
   isSaving,
   isSyncing,
+  isSyncingInventory,
+  isSyncingProducts,
 }: {
   channel: Channel;
   autoSyncOrders: boolean;
   autoSyncInventory: boolean;
   initialSyncDays: number | null;
+  inventorySyncDays: number | null;
+  productSyncDays: number | null;
+  orderSyncLimit: number | null;
+  inventorySyncLimit: number | null;
+  productSyncLimit: number | null;
   syncProductsEnabled: boolean;
   autoSyncProducts: boolean;
   settingsChanged: boolean;
+  orderSyncExpanded: boolean;
+  inventorySyncExpanded: boolean;
+  productSyncExpanded: boolean;
   onSettingChange: (setting: 'orders' | 'inventory' | 'syncProducts' | 'autoSyncProducts', value: boolean) => void;
   onInitialSyncDaysChange: (value: number | null) => void;
+  onInventorySyncDaysChange: (value: number | null) => void;
+  onProductSyncDaysChange: (value: number | null) => void;
+  onOrderSyncLimitChange: (value: number | null) => void;
+  onInventorySyncLimitChange: (value: number | null) => void;
+  onProductSyncLimitChange: (value: number | null) => void;
+  onOrderSyncExpandedChange: (value: boolean) => void;
+  onInventorySyncExpandedChange: (value: boolean) => void;
+  onProductSyncExpandedChange: (value: boolean) => void;
   onSaveSettings: () => void;
   onSync: () => void;
+  onSyncInventory: () => void;
+  onSyncProducts: () => void;
   onDisconnect: () => void;
   isSaving: boolean;
   isSyncing: boolean;
+  isSyncingInventory: boolean;
+  isSyncingProducts: boolean;
 }) {
   return (
     <div className="space-y-6">
@@ -495,74 +628,303 @@ function ConnectedView({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Initial Sync Range */}
-          <div className="flex items-center justify-between rounded-lg border p-4">
-            <div className="flex items-center gap-3">
-              <Clock className="h-5 w-5 text-muted-foreground" />
-              <div>
-                <p className="font-medium">Order Sync Range</p>
-                <p className="text-sm text-muted-foreground">
-                  How far back to fetch orders when syncing
-                </p>
-              </div>
-            </div>
-            <select
-              className="rounded-md border border-input bg-background px-3 py-2 text-sm"
-              value={initialSyncDays === null ? 'all' : initialSyncDays.toString()}
-              onChange={(e) => {
-                const value = e.target.value;
-                onInitialSyncDaysChange(value === 'all' ? null : parseInt(value, 10));
-              }}
+          {/* ===== ORDER SYNC SECTION ===== */}
+          <div className="rounded-lg border">
+            <div
+              className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+              onClick={() => onOrderSyncExpandedChange(!orderSyncExpanded)}
             >
-              <option value="7">Last 7 days</option>
-              <option value="14">Last 14 days</option>
-              <option value="30">Last 30 days</option>
-              <option value="60">Last 60 days</option>
-              <option value="90">Last 90 days</option>
-              <option value="all">All orders</option>
-            </select>
+              <div className="flex items-center gap-3">
+                {orderSyncExpanded ? (
+                  <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                )}
+                <ShoppingCart className="h-5 w-5 text-muted-foreground" />
+                <div>
+                  <p className="font-medium">Order Sync</p>
+                  <p className="text-sm text-muted-foreground">
+                    Configure order syncing from {channel.type}
+                  </p>
+                </div>
+              </div>
+              <label className="relative inline-flex cursor-pointer items-center" onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  className="peer sr-only"
+                  checked={autoSyncOrders}
+                  onChange={(e) => onSettingChange('orders', e.target.checked)}
+                />
+                <div className="peer h-6 w-11 rounded-full bg-gray-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-primary peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20"></div>
+              </label>
+            </div>
+
+            {orderSyncExpanded && (
+              <div className="border-t p-4 space-y-4 bg-muted/20">
+                {/* Order Sync Days */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Clock className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <p className="font-medium">Sync Days</p>
+                      <p className="text-sm text-muted-foreground">
+                        Only sync orders created in the last N days
+                      </p>
+                    </div>
+                  </div>
+                  <select
+                    className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={initialSyncDays === null ? 'all' : initialSyncDays.toString()}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      onInitialSyncDaysChange(value === 'all' ? null : parseInt(value, 10));
+                    }}
+                  >
+                    <option value="1">Last 1 day</option>
+                    <option value="3">Last 3 days</option>
+                    <option value="7">Last 7 days</option>
+                    <option value="14">Last 14 days</option>
+                    <option value="30">Last 30 days</option>
+                    <option value="all">All time</option>
+                  </select>
+                </div>
+
+                {/* Order Sync Limit */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <ShoppingCart className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <p className="font-medium">Sync Limit</p>
+                      <p className="text-sm text-muted-foreground">
+                        Maximum orders to sync per batch
+                      </p>
+                    </div>
+                  </div>
+                  <select
+                    className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={orderSyncLimit === null ? 'unlimited' : orderSyncLimit.toString()}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      onOrderSyncLimitChange(value === 'unlimited' ? null : parseInt(value, 10));
+                    }}
+                  >
+                    <option value="50">50 orders</option>
+                    <option value="100">100 orders</option>
+                    <option value="200">200 orders</option>
+                    <option value="500">500 orders</option>
+                    <option value="1000">1000 orders</option>
+                    <option value="unlimited">Unlimited</option>
+                  </select>
+                </div>
+              </div>
+            )}
           </div>
 
-          <div className="flex items-center justify-between rounded-lg border p-4">
-            <div className="flex items-center gap-3">
-              <ShoppingCart className="h-5 w-5 text-muted-foreground" />
-              <div>
-                <p className="font-medium">Auto-sync Orders</p>
-                <p className="text-sm text-muted-foreground">
-                  Automatically import new orders via webhooks
-                </p>
+          {/* ===== INVENTORY SYNC SECTION ===== */}
+          <div className="rounded-lg border">
+            <div
+              className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+              onClick={() => onInventorySyncExpandedChange(!inventorySyncExpanded)}
+            >
+              <div className="flex items-center gap-3">
+                {inventorySyncExpanded ? (
+                  <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                )}
+                <Package className="h-5 w-5 text-muted-foreground" />
+                <div>
+                  <p className="font-medium">Inventory Sync</p>
+                  <p className="text-sm text-muted-foreground">
+                    Configure inventory syncing from {channel.type}
+                  </p>
+                </div>
               </div>
+              <label className="relative inline-flex cursor-pointer items-center" onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  className="peer sr-only"
+                  checked={autoSyncInventory}
+                  onChange={(e) => onSettingChange('inventory', e.target.checked)}
+                />
+                <div className="peer h-6 w-11 rounded-full bg-gray-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-primary peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20"></div>
+              </label>
             </div>
-            <label className="relative inline-flex cursor-pointer items-center">
-              <input
-                type="checkbox"
-                className="peer sr-only"
-                checked={autoSyncOrders}
-                onChange={(e) => onSettingChange('orders', e.target.checked)}
-              />
-              <div className="peer h-6 w-11 rounded-full bg-gray-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-primary peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20"></div>
-            </label>
+
+            {inventorySyncExpanded && (
+              <div className="border-t p-4 space-y-4 bg-muted/20">
+                {/* Inventory Sync Days */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Clock className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <p className="font-medium">Sync Days</p>
+                      <p className="text-sm text-muted-foreground">
+                        Only sync inventory updated in the last N days
+                      </p>
+                    </div>
+                  </div>
+                  <select
+                    className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={inventorySyncDays === null ? 'all' : inventorySyncDays.toString()}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      onInventorySyncDaysChange(value === 'all' ? null : parseInt(value, 10));
+                    }}
+                  >
+                    <option value="1">Last 1 day</option>
+                    <option value="3">Last 3 days</option>
+                    <option value="7">Last 7 days</option>
+                    <option value="14">Last 14 days</option>
+                    <option value="30">Last 30 days</option>
+                    <option value="all">All time</option>
+                  </select>
+                </div>
+
+                {/* Inventory Sync Limit */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Package className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <p className="font-medium">Sync Limit</p>
+                      <p className="text-sm text-muted-foreground">
+                        Maximum inventory items to sync per batch
+                      </p>
+                    </div>
+                  </div>
+                  <select
+                    className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={inventorySyncLimit === null ? 'unlimited' : inventorySyncLimit.toString()}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      onInventorySyncLimitChange(value === 'unlimited' ? null : parseInt(value, 10));
+                    }}
+                  >
+                    <option value="100">100 items</option>
+                    <option value="250">250 items</option>
+                    <option value="500">500 items</option>
+                    <option value="1000">1000 items</option>
+                    <option value="2000">2000 items</option>
+                    <option value="unlimited">Unlimited</option>
+                  </select>
+                </div>
+              </div>
+            )}
           </div>
 
-          <div className="flex items-center justify-between rounded-lg border p-4">
-            <div className="flex items-center gap-3">
-              <Package className="h-5 w-5 text-muted-foreground" />
-              <div>
-                <p className="font-medium">Auto-sync Inventory</p>
-                <p className="text-sm text-muted-foreground">
-                  Push inventory updates back when stock changes
-                </p>
+          {/* ===== PRODUCT SYNC SECTION ===== */}
+          <div className="rounded-lg border">
+            <div
+              className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+              onClick={() => onProductSyncExpandedChange(!productSyncExpanded)}
+            >
+              <div className="flex items-center gap-3">
+                {productSyncExpanded ? (
+                  <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                )}
+                <Store className="h-5 w-5 text-muted-foreground" />
+                <div>
+                  <p className="font-medium">Product Sync</p>
+                  <p className="text-sm text-muted-foreground">
+                    Configure product syncing from {channel.type}
+                  </p>
+                </div>
               </div>
+              <label className="relative inline-flex cursor-pointer items-center" onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  className="peer sr-only"
+                  checked={syncProductsEnabled}
+                  onChange={(e) => onSettingChange('syncProducts', e.target.checked)}
+                />
+                <div className="peer h-6 w-11 rounded-full bg-gray-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-primary peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20"></div>
+              </label>
             </div>
-            <label className="relative inline-flex cursor-pointer items-center">
-              <input
-                type="checkbox"
-                className="peer sr-only"
-                checked={autoSyncInventory}
-                onChange={(e) => onSettingChange('inventory', e.target.checked)}
-              />
-              <div className="peer h-6 w-11 rounded-full bg-gray-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-primary peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20"></div>
-            </label>
+
+            {productSyncExpanded && (
+              <div className="border-t p-4 space-y-4 bg-muted/20">
+                {/* Auto-sync Products */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Zap className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <p className="font-medium">Auto-sync Products</p>
+                      <p className="text-sm text-muted-foreground">
+                        Automatically import new products via webhooks
+                      </p>
+                    </div>
+                  </div>
+                  <label className="relative inline-flex cursor-pointer items-center">
+                    <input
+                      type="checkbox"
+                      className="peer sr-only"
+                      checked={autoSyncProducts}
+                      onChange={(e) => onSettingChange('autoSyncProducts', e.target.checked)}
+                    />
+                    <div className="peer h-6 w-11 rounded-full bg-gray-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-primary peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20"></div>
+                  </label>
+                </div>
+
+                {/* Product Sync Days */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Clock className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <p className="font-medium">Sync Days</p>
+                      <p className="text-sm text-muted-foreground">
+                        Only sync products updated in the last N days
+                      </p>
+                    </div>
+                  </div>
+                  <select
+                    className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={productSyncDays === null ? 'all' : productSyncDays.toString()}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      onProductSyncDaysChange(value === 'all' ? null : parseInt(value, 10));
+                    }}
+                  >
+                    <option value="1">Last 1 day</option>
+                    <option value="3">Last 3 days</option>
+                    <option value="7">Last 7 days</option>
+                    <option value="14">Last 14 days</option>
+                    <option value="30">Last 30 days</option>
+                    <option value="all">All time</option>
+                  </select>
+                </div>
+
+                {/* Product Sync Limit */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Store className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <p className="font-medium">Sync Limit</p>
+                      <p className="text-sm text-muted-foreground">
+                        Maximum products to sync per batch
+                      </p>
+                    </div>
+                  </div>
+                  <select
+                    className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={productSyncLimit === null ? 'unlimited' : productSyncLimit.toString()}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      onProductSyncLimitChange(value === 'unlimited' ? null : parseInt(value, 10));
+                    }}
+                  >
+                    <option value="10">10 products</option>
+                    <option value="25">25 products</option>
+                    <option value="50">50 products</option>
+                    <option value="100">100 products</option>
+                    <option value="250">250 products</option>
+                    <option value="500">500 products</option>
+                    <option value="unlimited">Unlimited</option>
+                  </select>
+                </div>
+              </div>
+            )}
           </div>
 
           {settingsChanged && (
@@ -587,18 +949,26 @@ function ConnectedView({
             Manual Sync
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-medium">Sync Orders Now</p>
-              <p className="text-sm text-muted-foreground">
-                Manually trigger a sync to import all orders.
-              </p>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between rounded-lg border p-4">
+            <div className="flex items-center gap-3">
+              <ShoppingCart className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <p className="font-medium">Sync Orders</p>
+                <p className="text-sm text-muted-foreground">
+                  Import orders from {channel.type}
+                  {channel.lastSyncAt && (
+                    <span className="block text-xs">
+                      Last synced: {formatDateTime(channel.lastSyncAt)}
+                    </span>
+                  )}
+                </p>
+              </div>
             </div>
             <Button
               variant="outline"
               onClick={onSync}
-              disabled={isSyncing}
+              disabled={isSyncing || isSyncingInventory}
               leftIcon={
                 isSyncing ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -607,7 +977,70 @@ function ConnectedView({
                 )
               }
             >
-              {isSyncing ? 'Syncing...' : 'Sync Now'}
+              {isSyncing ? 'Syncing...' : 'Sync Orders'}
+            </Button>
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border p-4">
+            <div className="flex items-center gap-3">
+              <Package className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <p className="font-medium">Sync Inventory</p>
+                <p className="text-sm text-muted-foreground">
+                  Pull inventory levels from {channel.type}
+                  {channel.lastInventorySyncAt && (
+                    <span className="block text-xs">
+                      Last synced: {formatDateTime(channel.lastInventorySyncAt)}
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              onClick={onSyncInventory}
+              disabled={isSyncing || isSyncingInventory || isSyncingProducts}
+              leftIcon={
+                isSyncingInventory ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Package className="h-4 w-4" />
+                )
+              }
+            >
+              {isSyncingInventory ? 'Syncing...' : 'Sync Inventory'}
+            </Button>
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border p-4">
+            <div className="flex items-center gap-3">
+              <Store className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <p className="font-medium">Sync Products</p>
+                <p className="text-sm text-muted-foreground">
+                  Import products from {channel.type} and create inventory records
+                  {channel.lastProductSyncAt && (
+                    <span className="block text-xs">
+                      Last synced: {formatDateTime(channel.lastProductSyncAt)}
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              onClick={onSyncProducts}
+              disabled={isSyncing || isSyncingInventory || isSyncingProducts || !syncProductsEnabled}
+              leftIcon={
+                isSyncingProducts ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Store className="h-4 w-4" />
+                )
+              }
+              title={!syncProductsEnabled ? 'Enable product sync in settings first' : undefined}
+            >
+              {isSyncingProducts ? 'Syncing...' : 'Sync Products'}
             </Button>
           </div>
         </CardContent>

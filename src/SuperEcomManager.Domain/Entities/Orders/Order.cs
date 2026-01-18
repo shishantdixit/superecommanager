@@ -109,6 +109,50 @@ public class Order : AuditableEntity, ISoftDeletable
         UpdatedAt = DateTime.UtcNow;
     }
 
+    public void UpdateCustomerName(string customerName)
+    {
+        if (string.IsNullOrWhiteSpace(customerName))
+            throw new ArgumentException("Customer name cannot be empty", nameof(customerName));
+
+        CustomerName = customerName;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void UpdateShippingAddress(Address shippingAddress)
+    {
+        ShippingAddress = shippingAddress ?? throw new ArgumentNullException(nameof(shippingAddress));
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void ClearItems()
+    {
+        _items.Clear();
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public bool CanBeEdited()
+    {
+        return Status != OrderStatus.Shipped
+            && Status != OrderStatus.Delivered
+            && Status != OrderStatus.Cancelled
+            && Status != OrderStatus.Returned
+            && Status != OrderStatus.RTO;
+    }
+
+    public bool CanBeDeleted()
+    {
+        return Status == OrderStatus.Pending || Status == OrderStatus.Cancelled;
+    }
+
+    public void SoftDelete(Guid? userId = null)
+    {
+        if (!CanBeDeleted())
+            throw new InvalidOperationException($"Order in status {Status} cannot be deleted");
+
+        DeletedAt = DateTime.UtcNow;
+        DeletedBy = userId;
+    }
+
     public void SetBillingAddress(Address? billingAddress)
     {
         BillingAddress = billingAddress;
@@ -132,6 +176,16 @@ public class Order : AuditableEntity, ISoftDeletable
     public void SetPlatformData(string? platformData)
     {
         PlatformData = platformData;
+    }
+
+    public void SetExternalOrderInfo(string externalOrderId, string? externalOrderNumber = null)
+    {
+        ExternalOrderId = externalOrderId;
+        if (externalOrderNumber != null)
+        {
+            ExternalOrderNumber = externalOrderNumber;
+        }
+        UpdatedAt = DateTime.UtcNow;
     }
 
     public void UpdateStatus(OrderStatus newStatus, Guid? userId = null, string? reason = null)

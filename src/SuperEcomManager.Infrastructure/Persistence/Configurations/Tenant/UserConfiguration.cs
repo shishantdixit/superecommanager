@@ -40,6 +40,6 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
             .OnDelete(DeleteBehavior.Cascade);
 
         builder.HasIndex(u => u.DeletedAt)
-            .HasFilter("deleted_at IS NULL");
+            .HasFilter("\"DeletedAt\" IS NULL");
     }
 }

@@ -97,23 +97,42 @@ public class TenantSeeder : ITenantSeeder
         var dbContext = scope.ServiceProvider.GetRequiredService<TenantDbContext>();
         var appDbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
-        if (await dbContext.Roles.AnyAsync(cancellationToken))
-        {
-            _logger.LogDebug("Roles already exist for tenant, skipping");
-            return;
-        }
+        // Always sync permissions from shared schema to tenant schema (add any missing ones)
+        var existingPermissions = await dbContext.Permissions.ToListAsync(cancellationToken);
+        var existingCodes = existingPermissions.Select(p => p.Code).ToHashSet();
+        var sharedPermissions = await appDbContext.Permissions.ToListAsync(cancellationToken);
+        var newPermissions = sharedPermissions.Where(p => !existingCodes.Contains(p.Code)).ToList();
 
-        // First, copy permissions from shared schema to tenant schema if they don't exist
-        if (!await dbContext.Permissions.AnyAsync(cancellationToken))
+        if (newPermissions.Count > 0)
         {
-            var sharedPermissions = await appDbContext.Permissions.ToListAsync(cancellationToken);
-            foreach (var perm in sharedPermissions)
+            foreach (var perm in newPermissions)
             {
                 var tenantPerm = Permission.Create(perm.Code, perm.Name, perm.Module, perm.Description);
                 dbContext.Permissions.Add(tenantPerm);
             }
             await dbContext.SaveChangesAsync(cancellationToken);
-            _logger.LogDebug("Copied {Count} permissions to tenant schema", sharedPermissions.Count);
+            _logger.LogDebug("Synced {Count} new permissions to tenant schema", newPermissions.Count);
+
+            // Add new permissions to Owner role
+            var existingOwnerRole = await dbContext.Roles.FirstOrDefaultAsync(r => r.Name == "Owner", cancellationToken);
+            if (existingOwnerRole != null)
+            {
+                var tenantNewPerms = await dbContext.Permissions
+                    .Where(p => newPermissions.Select(np => np.Code).Contains(p.Code))
+                    .ToListAsync(cancellationToken);
+                foreach (var perm in tenantNewPerms)
+                {
+                    dbContext.RolePermissions.Add(new RolePermission(existingOwnerRole.Id, perm.Id));
+                }
+                await dbContext.SaveChangesAsync(cancellationToken);
+                _logger.LogDebug("Added {Count} new permissions to Owner role", tenantNewPerms.Count);
+            }
+        }
+
+        if (await dbContext.Roles.AnyAsync(cancellationToken))
+        {
+            _logger.LogDebug("Roles already exist for tenant, skipping role creation");
+            return;
         }
 
         var permissions = await dbContext.Permissions.ToListAsync(cancellationToken);

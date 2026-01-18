@@ -30,9 +30,10 @@ public static class DependencyInjection
         services.Configure<ShopifySettings>(configuration.GetSection(ShopifySettings.SectionName));
 
         // Register Shopify HTTP client with retry policy
+        // Increased timeout to 120 seconds to handle large product/inventory syncs
         services.AddHttpClient<IShopifyClient, ShopifyClient>(client =>
         {
-            client.Timeout = TimeSpan.FromSeconds(30);
+            client.Timeout = TimeSpan.FromSeconds(120);
         })
         .AddPolicyHandler(GetRetryPolicy())
         .AddPolicyHandler(GetCircuitBreakerPolicy());
@@ -45,6 +46,18 @@ public static class DependencyInjection
         // Register channel sync services
         services.AddScoped<IChannelSyncService, ShopifyChannelSyncService>();
         services.AddScoped<IChannelSyncServiceFactory, ChannelSyncServiceFactory>();
+
+        // Register order creation services for external platforms
+        services.AddScoped<IOrderCreationService, ShopifyOrderCreationService>();
+        services.AddScoped<IOrderCreationServiceFactory, Services.OrderCreationServiceFactory>();
+
+        // Register order update services for syncing order changes to external platforms
+        services.AddScoped<IOrderUpdateService, ShopifyOrderUpdateService>();
+        services.AddScoped<IOrderUpdateServiceFactory, Services.OrderUpdateServiceFactory>();
+
+        // Register inventory sync services for pushing inventory to external platforms
+        services.AddScoped<IInventorySyncService, ShopifyInventorySyncService>();
+        services.AddScoped<IInventorySyncServiceFactory, Services.InventorySyncServiceFactory>();
 
         // Register Shiprocket settings
         services.Configure<ShiprocketSettings>(configuration.GetSection(ShiprocketSettings.SectionName));

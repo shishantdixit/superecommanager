@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { DashboardLayout } from '@/components/layout';
 import {
@@ -23,8 +23,8 @@ import {
   SectionLoader,
 } from '@/components/ui';
 import { formatCurrency } from '@/lib/utils';
-import { useProducts, useInventoryStats } from '@/hooks';
-import type { ProductFilters } from '@/services/inventory.service';
+import { useProducts, useInventoryStats, useChannels, useSyncInventory } from '@/hooks';
+import { SyncStatus, type ProductFilters } from '@/services/inventory.service';
 import {
   Search,
   Filter,
@@ -34,9 +34,15 @@ import {
   Edit,
   Package,
   AlertTriangle,
-  TrendingDown,
   Box,
   DollarSign,
+  RefreshCw,
+  ChevronDown,
+  Loader2,
+  CheckCircle,
+  Lock,
+  Clock,
+  AlertCircle,
 } from 'lucide-react';
 
 const statusOptions = [
@@ -48,6 +54,14 @@ const statusOptions = [
 const stockOptions = [
   { value: '', label: 'All Stock' },
   { value: 'true', label: 'Low Stock' },
+];
+
+const syncStatusOptions = [
+  { value: '', label: 'All Sync' },
+  { value: String(SyncStatus.Synced), label: '✓ Synced' },
+  { value: String(SyncStatus.LocalOnly), label: '🔒 Local Only' },
+  { value: String(SyncStatus.Pending), label: '⏳ Pending' },
+  { value: String(SyncStatus.Conflict), label: '⚠️ Conflict' },
 ];
 
 const sortOptions = [
@@ -66,6 +80,9 @@ export default function InventoryPage() {
     sortDescending: true,
   });
   const [searchQuery, setSearchQuery] = useState('');
+  const [showSyncMenu, setShowSyncMenu] = useState(false);
+  const [syncingChannelId, setSyncingChannelId] = useState<string | null>(null);
+  const syncMenuRef = useRef<HTMLDivElement>(null);
 
   const apiFilters: ProductFilters = {
     ...filters,
@@ -74,6 +91,36 @@ export default function InventoryPage() {
 
   const { data, isLoading, error } = useProducts(apiFilters);
   const { data: stats } = useInventoryStats();
+  const { data: channels } = useChannels();
+  const syncInventory = useSyncInventory();
+
+  // Connected channels only
+  const connectedChannels = channels?.filter(c => c.isConnected) || [];
+
+  // Close sync menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (syncMenuRef.current && !syncMenuRef.current.contains(event.target as Node)) {
+        setShowSyncMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleSyncInventory = async (channelId: string) => {
+    setSyncingChannelId(channelId);
+    try {
+      await syncInventory.mutateAsync(channelId);
+    } catch (err: unknown) {
+      const errorMessage = (err as { message?: string })?.message || 'Unknown error';
+      console.error('Failed to sync inventory:', errorMessage);
+      alert(`Failed to sync inventory: ${errorMessage}`);
+    } finally {
+      setSyncingChannelId(null);
+      setShowSyncMenu(false);
+    }
+  };
 
   const products = data?.items || [];
   const totalItems = data?.totalCount || 0;
@@ -82,7 +129,15 @@ export default function InventoryPage() {
   const handleFilterChange = (key: keyof ProductFilters, value: string) => {
     setFilters((prev) => ({
       ...prev,
-      [key]: value === '' ? undefined : value === 'true' ? true : value === 'false' ? false : value,
+      [key]: value === ''
+        ? undefined
+        : value === 'true'
+        ? true
+        : value === 'false'
+        ? false
+        : key === 'syncStatus'
+        ? Number(value)
+        : value,
       page: 1,
     }));
   };
@@ -129,6 +184,44 @@ export default function InventoryPage() {
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Products</CardTitle>
           <div className="flex items-center gap-2">
+            {/* Sync Inventory Dropdown */}
+            {connectedChannels.length > 0 && (
+              <div className="relative" ref={syncMenuRef}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowSyncMenu(!showSyncMenu)}
+                  leftIcon={<RefreshCw className="h-4 w-4" />}
+                  rightIcon={<ChevronDown className="h-3 w-3" />}
+                >
+                  Sync Inventory
+                </Button>
+                {showSyncMenu && (
+                  <div className="absolute right-0 top-full z-50 mt-1 w-56 rounded-md border bg-background shadow-lg">
+                    <div className="p-2">
+                      <p className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+                        Pull inventory from channel
+                      </p>
+                      {connectedChannels.map((channel) => (
+                        <button
+                          key={channel.id}
+                          onClick={() => handleSyncInventory(channel.id)}
+                          disabled={syncingChannelId !== null}
+                          className="flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-sm hover:bg-muted disabled:opacity-50"
+                        >
+                          <span>{channel.name}</span>
+                          {syncingChannelId === channel.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Package className="h-3 w-3 text-muted-foreground" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             <Button variant="outline" size="sm" leftIcon={<Download className="h-4 w-4" />}>
               Export
             </Button>
@@ -163,6 +256,12 @@ export default function InventoryPage() {
               className="w-32"
             />
             <Select
+              options={syncStatusOptions}
+              value={filters.syncStatus === undefined ? '' : String(filters.syncStatus)}
+              onChange={(e) => handleFilterChange('syncStatus', e.target.value)}
+              className="w-36"
+            />
+            <Select
               options={sortOptions}
               value={filters.sortBy || 'CreatedAt'}
               onChange={(e) => handleFilterChange('sortBy', e.target.value)}
@@ -193,13 +292,14 @@ export default function InventoryPage() {
                     <TableHead className="text-right">Price</TableHead>
                     <TableHead className="text-center">Stock</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Sync</TableHead>
                     <TableHead className="w-20">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {products.length === 0 ? (
                     <TableEmpty
-                      colSpan={8}
+                      colSpan={9}
                       message="No products found"
                       icon={<Package className="h-8 w-8" />}
                     />
@@ -260,6 +360,13 @@ export default function InventoryPage() {
                           >
                             {product.isActive ? 'Active' : 'Inactive'}
                           </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <SyncStatusBadge
+                            syncStatus={product.syncStatus}
+                            channelPrice={product.channelSellingPrice}
+                            localPrice={product.sellingPrice}
+                          />
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
@@ -405,5 +512,55 @@ function StockBadge({ stock }: { stock: number }) {
   }
   return (
     <span className="font-medium text-success">{stock.toLocaleString()}</span>
+  );
+}
+
+function SyncStatusBadge({
+  syncStatus,
+  channelPrice,
+  localPrice,
+}: {
+  syncStatus: SyncStatus;
+  channelPrice?: number;
+  localPrice: number;
+}) {
+  const statusConfig = {
+    [SyncStatus.Synced]: {
+      icon: <CheckCircle className="h-3 w-3" />,
+      label: 'Synced',
+      variant: 'success' as const,
+      tooltip: 'Product is synced with channel',
+    },
+    [SyncStatus.LocalOnly]: {
+      icon: <Lock className="h-3 w-3" />,
+      label: 'Local',
+      variant: 'default' as const,
+      tooltip: 'Local only - will not sync to channel',
+    },
+    [SyncStatus.Pending]: {
+      icon: <Clock className="h-3 w-3" />,
+      label: 'Pending',
+      variant: 'warning' as const,
+      tooltip: 'Changes pending - click to push to channel',
+    },
+    [SyncStatus.Conflict]: {
+      icon: <AlertCircle className="h-3 w-3" />,
+      label: 'Conflict',
+      variant: 'error' as const,
+      tooltip: channelPrice
+        ? `Channel: ${formatCurrency(channelPrice)} vs Local: ${formatCurrency(localPrice)}`
+        : 'Price conflict detected',
+    },
+  };
+
+  const config = statusConfig[syncStatus] || statusConfig[SyncStatus.Synced];
+
+  return (
+    <div title={config.tooltip}>
+      <Badge variant={config.variant} size="sm" className="gap-1">
+        {config.icon}
+        {config.label}
+      </Badge>
+    </div>
   );
 }

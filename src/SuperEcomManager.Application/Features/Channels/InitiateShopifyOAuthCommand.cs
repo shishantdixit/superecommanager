@@ -89,7 +89,7 @@ public class InitiateShopifyOAuthCommandHandler : IRequestHandler<InitiateShopif
         await _cacheService.SetGlobalAsync(stateKey, stateData, TimeSpan.FromMinutes(10), cancellationToken);
 
         // Build Shopify OAuth URL using tenant's credentials
-        var scopes = channel.Scopes ?? "read_orders,write_orders,read_products,read_inventory,write_inventory,read_fulfillments,write_fulfillments";
+        var scopes = channel.Scopes ?? "read_orders,write_orders,read_products,read_inventory,write_inventory,read_locations,read_fulfillments,write_fulfillments";
         var authUrl = BuildAuthorizationUrl(shopDomain, channel.ApiKey, scopes, request.RedirectUri, state);
 
         _logger.LogInformation(

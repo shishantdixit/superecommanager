@@ -12,7 +12,7 @@ namespace SuperEcomManager.Application.Features.Channels;
 /// Command to save Shopify API credentials for a tenant.
 /// Each tenant must create their own Shopify app and provide their credentials.
 /// </summary>
-[RequirePermission("channels.manage")]
+[RequirePermission("channels.connect")]
 [RequireFeature("channels_management")]
 public record SaveShopifyCredentialsCommand : IRequest<Result<ChannelDto>>, ITenantRequest
 {
@@ -29,7 +29,7 @@ public class SaveShopifyCredentialsCommandHandler : IRequestHandler<SaveShopifyC
     private readonly ILogger<SaveShopifyCredentialsCommandHandler> _logger;
 
     // Default Shopify scopes if not specified
-    private const string DefaultScopes = "read_orders,write_orders,read_products,read_inventory,write_inventory,read_fulfillments,write_fulfillments";
+    private const string DefaultScopes = "read_orders,write_orders,read_products,read_inventory,write_inventory,read_locations,read_fulfillments,write_fulfillments";
 
     public SaveShopifyCredentialsCommandHandler(
         ITenantDbContext dbContext,
@@ -92,17 +92,32 @@ public class SaveShopifyCredentialsCommandHandler : IRequestHandler<SaveShopifyC
 
             if (existingByDomain != null)
             {
-                return Result<ChannelDto>.Failure($"A Shopify channel for {shopDomain} already exists");
+                if (existingByDomain.IsActive)
+                {
+                    return Result<ChannelDto>.Failure($"A Shopify channel for {shopDomain} already exists");
+                }
+
+                // Reactivate the existing inactive channel
+                _logger.LogInformation(
+                    "Reactivating existing inactive Shopify channel {ChannelId} for domain {ShopDomain}",
+                    existingByDomain.Id, shopDomain);
+
+                existingByDomain.Activate();
+                // Clear old access token to force re-authorization with new scopes
+                existingByDomain.MarkDisconnected();
+                channel = existingByDomain;
             }
+            else
+            {
+                // Create new channel
+                channel = Domain.Entities.Channels.SalesChannel.Create(
+                    name: $"Shopify - {shopDomain.Replace(".myshopify.com", "")}",
+                    type: ChannelType.Shopify,
+                    storeUrl: $"https://{shopDomain}",
+                    storeName: shopDomain.Replace(".myshopify.com", ""));
 
-            // Create new channel
-            channel = Domain.Entities.Channels.SalesChannel.Create(
-                name: $"Shopify - {shopDomain.Replace(".myshopify.com", "")}",
-                type: ChannelType.Shopify,
-                storeUrl: $"https://{shopDomain}",
-                storeName: shopDomain.Replace(".myshopify.com", ""));
-
-            await _dbContext.SalesChannels.AddAsync(channel, cancellationToken);
+                await _dbContext.SalesChannels.AddAsync(channel, cancellationToken);
+            }
         }
 
         // Set credentials
@@ -131,7 +146,17 @@ public class SaveShopifyCredentialsCommandHandler : IRequestHandler<SaveShopifyC
             AutoSyncOrders = channel.AutoSyncOrders,
             AutoSyncInventory = channel.AutoSyncInventory,
             IsConnected = channel.IsConnected,
-            HasCredentials = !string.IsNullOrEmpty(channel.ApiKey)
+            HasCredentials = !string.IsNullOrEmpty(channel.ApiKey),
+            InitialSyncDays = channel.InitialSyncDays,
+            InventorySyncDays = channel.InventorySyncDays,
+            ProductSyncDays = channel.ProductSyncDays,
+            OrderSyncLimit = channel.OrderSyncLimit,
+            InventorySyncLimit = channel.InventorySyncLimit,
+            ProductSyncLimit = channel.ProductSyncLimit,
+            SyncProductsEnabled = channel.SyncProductsEnabled,
+            AutoSyncProducts = channel.AutoSyncProducts,
+            LastProductSyncAt = channel.LastProductSyncAt,
+            LastInventorySyncAt = channel.LastInventorySyncAt
         });
     }
 }

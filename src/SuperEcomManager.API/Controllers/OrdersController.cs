@@ -85,6 +85,113 @@ public class OrdersController : ApiControllerBase
     }
 
     /// <summary>
+    /// Create a new manual order (phone order, walk-in, etc.).
+    /// </summary>
+    [HttpPost]
+    [ProducesResponseType(typeof(ApiResponse<OrderDetailDto>), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiResponse<OrderDetailDto>), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ApiResponse<OrderDetailDto>>> CreateOrder(
+        [FromBody] CreateOrderRequest request)
+    {
+        var command = new CreateOrderCommand
+        {
+            CustomerName = request.CustomerName,
+            CustomerEmail = request.CustomerEmail,
+            CustomerPhone = request.CustomerPhone,
+            ShippingAddress = request.ShippingAddress,
+            BillingAddress = request.BillingAddress,
+            Items = request.Items,
+            PaymentMethod = request.PaymentMethod,
+            PaymentStatus = request.PaymentStatus,
+            ShippingAmount = request.ShippingAmount,
+            DiscountAmount = request.DiscountAmount,
+            TaxAmount = request.TaxAmount,
+            Currency = request.Currency,
+            CustomerNotes = request.CustomerNotes,
+            InternalNotes = request.InternalNotes,
+            ChannelId = request.ChannelId
+        };
+
+        var result = await Mediator.Send(command);
+
+        if (result.IsFailure)
+            return BadRequestResponse<OrderDetailDto>(string.Join(", ", result.Errors));
+
+        return CreatedAtAction(
+            nameof(GetOrder),
+            new { id = result.Value!.Id },
+            ApiResponse<OrderDetailDto>.Ok(result.Value!, "Order created successfully."));
+    }
+
+    /// <summary>
+    /// Update an existing order.
+    /// </summary>
+    [HttpPut("{id:guid}")]
+    [ProducesResponseType(typeof(ApiResponse<OrderDetailDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<OrderDetailDto>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<OrderDetailDto>), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ApiResponse<OrderDetailDto>>> UpdateOrder(
+        Guid id,
+        [FromBody] UpdateOrderRequest request)
+    {
+        var command = new UpdateOrderCommand
+        {
+            OrderId = id,
+            CustomerName = request.CustomerName,
+            CustomerEmail = request.CustomerEmail,
+            CustomerPhone = request.CustomerPhone,
+            ShippingAddress = request.ShippingAddress,
+            BillingAddress = request.BillingAddress,
+            Items = request.Items,
+            PaymentMethod = request.PaymentMethod,
+            PaymentStatus = request.PaymentStatus,
+            ShippingAmount = request.ShippingAmount,
+            DiscountAmount = request.DiscountAmount,
+            TaxAmount = request.TaxAmount,
+            Currency = request.Currency,
+            CustomerNotes = request.CustomerNotes,
+            InternalNotes = request.InternalNotes,
+            SyncToChannel = request.SyncToChannel
+        };
+
+        var result = await Mediator.Send(command);
+
+        if (result.IsFailure)
+        {
+            if (result.Errors.Any(e => e.Contains("not found")))
+                return NotFoundResponse<OrderDetailDto>(string.Join(", ", result.Errors));
+
+            return BadRequestResponse<OrderDetailDto>(string.Join(", ", result.Errors));
+        }
+
+        return OkResponse(result.Value!, "Order updated successfully.");
+    }
+
+    /// <summary>
+    /// Delete an order (soft delete).
+    /// </summary>
+    [HttpDelete("{id:guid}")]
+    [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ApiResponse<bool>>> DeleteOrder(Guid id)
+    {
+        var command = new DeleteOrderCommand { OrderId = id };
+
+        var result = await Mediator.Send(command);
+
+        if (result.IsFailure)
+        {
+            if (result.Errors.Any(e => e.Contains("not found")))
+                return NotFoundResponse<bool>(string.Join(", ", result.Errors));
+
+            return BadRequestResponse<bool>(string.Join(", ", result.Errors));
+        }
+
+        return OkResponse(result.Value, "Order deleted successfully.");
+    }
+
+    /// <summary>
     /// Get order statistics for dashboard.
     /// </summary>
     [HttpGet("stats")]
@@ -248,6 +355,53 @@ public class OrdersController : ApiControllerBase
 }
 
 #region Request Models
+
+/// <summary>
+/// Request model for creating a new order.
+/// </summary>
+public record CreateOrderRequest
+{
+    public string CustomerName { get; init; } = string.Empty;
+    public string? CustomerEmail { get; init; }
+    public string? CustomerPhone { get; init; }
+    public CreateAddressDto ShippingAddress { get; init; } = null!;
+    public CreateAddressDto? BillingAddress { get; init; }
+    public List<CreateOrderItemDto> Items { get; init; } = new();
+    public PaymentMethod PaymentMethod { get; init; }
+    public PaymentStatus PaymentStatus { get; init; } = PaymentStatus.Pending;
+    public decimal ShippingAmount { get; init; }
+    public decimal DiscountAmount { get; init; }
+    public decimal TaxAmount { get; init; }
+    public string Currency { get; init; } = "INR";
+    public string? CustomerNotes { get; init; }
+    public string? InternalNotes { get; init; }
+    public Guid? ChannelId { get; init; }
+}
+
+/// <summary>
+/// Request model for updating an order.
+/// </summary>
+public record UpdateOrderRequest
+{
+    public string CustomerName { get; init; } = string.Empty;
+    public string? CustomerEmail { get; init; }
+    public string? CustomerPhone { get; init; }
+    public CreateAddressDto ShippingAddress { get; init; } = null!;
+    public CreateAddressDto? BillingAddress { get; init; }
+    public List<CreateOrderItemDto> Items { get; init; } = new();
+    public PaymentMethod PaymentMethod { get; init; }
+    public PaymentStatus PaymentStatus { get; init; }
+    public decimal ShippingAmount { get; init; }
+    public decimal DiscountAmount { get; init; }
+    public decimal TaxAmount { get; init; }
+    public string Currency { get; init; } = "INR";
+    public string? CustomerNotes { get; init; }
+    public string? InternalNotes { get; init; }
+    /// <summary>
+    /// Whether to sync changes to the external channel (e.g., Shopify).
+    /// </summary>
+    public bool SyncToChannel { get; init; } = false;
+}
 
 /// <summary>
 /// Request model for updating order status.

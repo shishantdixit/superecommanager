@@ -40,6 +40,6 @@ public class SalesChannelConfiguration : IEntityTypeConfiguration<SalesChannel>
 
         builder.HasIndex(c => c.Type);
         builder.HasIndex(c => c.DeletedAt)
-            .HasFilter("deleted_at IS NULL");
+            .HasFilter("\"DeletedAt\" IS NULL");
     }
 }

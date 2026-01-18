@@ -24,6 +24,11 @@ export interface Channel {
   lastError?: string;
   // Advanced sync settings
   initialSyncDays?: number | null;
+  inventorySyncDays?: number | null;
+  productSyncDays?: number | null;
+  orderSyncLimit?: number | null;
+  inventorySyncLimit?: number | null;
+  productSyncLimit?: number | null;
   syncProductsEnabled?: boolean;
   autoSyncProducts?: boolean;
   lastProductSyncAt?: string;
@@ -35,6 +40,11 @@ export interface UpdateChannelSettingsRequest {
   autoSyncInventory?: boolean;
   // Advanced sync settings
   initialSyncDays?: number | null;
+  inventorySyncDays?: number | null;
+  productSyncDays?: number | null;
+  orderSyncLimit?: number | null;
+  inventorySyncLimit?: number | null;
+  productSyncLimit?: number | null;
   syncProductsEnabled?: boolean;
   autoSyncProducts?: boolean;
 }
@@ -58,10 +68,21 @@ export interface ShopifyOAuthResult {
 
 export interface ChannelSyncResult {
   channelId: string;
+  status: string;
+  syncedAt: string;
+  // Order sync results
   ordersImported: number;
   ordersUpdated: number;
+  ordersFailed: number;
+  // Product sync results
+  productsImported: number;
+  productsUpdated: number;
+  productsFailed: number;
+  // Inventory sync results
+  inventoryUpdated: number;
+  inventorySkipped: number;
+  inventoryFailed: number;
   errors: string[];
-  syncedAt: string;
 }
 
 export const channelsService = {
@@ -112,10 +133,28 @@ export const channelsService = {
   },
 
   /**
-   * Trigger manual sync for a channel.
+   * Trigger manual order sync for a channel.
    */
   syncChannel: async (id: string) => {
     const response = await post<ApiResponse<ChannelSyncResult>>(`/channels/${id}/sync`, {});
+    return response.data;
+  },
+
+  /**
+   * Trigger manual inventory sync for a channel.
+   * Pulls inventory levels from the external channel and updates local inventory.
+   */
+  syncInventory: async (id: string) => {
+    const response = await post<ApiResponse<ChannelSyncResult>>(`/channels/${id}/sync/inventory`, {});
+    return response.data;
+  },
+
+  /**
+   * Trigger manual product sync for a channel.
+   * Imports products and creates local inventory records.
+   */
+  syncProducts: async (id: string) => {
+    const response = await post<ApiResponse<ChannelSyncResult>>(`/channels/${id}/sync/products`, {});
     return response.data;
   },
 

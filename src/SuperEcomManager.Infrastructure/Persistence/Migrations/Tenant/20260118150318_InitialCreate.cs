@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore.Migrations;
+using SuperEcomManager.Domain.Enums;
 
 #nullable disable
 
@@ -12,9 +13,6 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AlterDatabase()
-                .Annotation("Npgsql:PostgresExtension:hstore", ",,");
-
             migrationBuilder.CreateTable(
                 name: "AuditLogs",
                 columns: table => new
@@ -218,6 +216,11 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
                     IsActive = table.Column<bool>(type: "boolean", nullable: false),
                     HsnCode = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: true),
                     TaxRate = table.Column<decimal>(type: "numeric(5,2)", precision: 5, scale: 2, nullable: true),
+                    sync_status = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
+                    last_synced_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    channel_product_id = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    channel_selling_price = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: true),
+                    channel_selling_currency = table.Column<string>(type: "character varying(3)", maxLength: 3, nullable: true),
                     DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     DeletedBy = table.Column<Guid>(type: "uuid", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
@@ -265,6 +268,23 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
                     LastSyncStatus = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
                     CredentialsEncrypted = table.Column<string>(type: "text", nullable: true),
                     WebhookSecret = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    ApiKey = table.Column<string>(type: "text", nullable: true),
+                    ApiSecret = table.Column<string>(type: "text", nullable: true),
+                    AccessToken = table.Column<string>(type: "text", nullable: true),
+                    Scopes = table.Column<string>(type: "text", nullable: true),
+                    IsConnected = table.Column<bool>(type: "boolean", nullable: false),
+                    LastConnectedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    LastError = table.Column<string>(type: "text", nullable: true),
+                    InitialSyncDays = table.Column<int>(type: "integer", nullable: true),
+                    InventorySyncDays = table.Column<int>(type: "integer", nullable: true),
+                    ProductSyncDays = table.Column<int>(type: "integer", nullable: true),
+                    OrderSyncLimit = table.Column<int>(type: "integer", nullable: true),
+                    InventorySyncLimit = table.Column<int>(type: "integer", nullable: true),
+                    ProductSyncLimit = table.Column<int>(type: "integer", nullable: true),
+                    SyncProductsEnabled = table.Column<bool>(type: "boolean", nullable: false),
+                    AutoSyncProducts = table.Column<bool>(type: "boolean", nullable: false),
+                    LastProductSyncAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    LastInventorySyncAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     DeletedBy = table.Column<Guid>(type: "uuid", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
@@ -413,18 +433,18 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
                 });
 
             migrationBuilder.CreateTable(
-                name: "WebhookSubscriptions",
+                name: "webhook_subscriptions",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    Name = table.Column<string>(type: "text", nullable: false),
-                    Url = table.Column<string>(type: "text", nullable: false),
-                    Secret = table.Column<string>(type: "text", nullable: false),
-                    IsActive = table.Column<bool>(type: "boolean", nullable: false),
-                    Events = table.Column<int[]>(type: "integer[]", nullable: false),
-                    Headers = table.Column<Dictionary<string, string>>(type: "hstore", nullable: false),
-                    MaxRetries = table.Column<int>(type: "integer", nullable: false),
-                    TimeoutSeconds = table.Column<int>(type: "integer", nullable: false),
+                    Name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                    Url = table.Column<string>(type: "character varying(2000)", maxLength: 2000, nullable: false),
+                    Secret = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: false),
+                    IsActive = table.Column<bool>(type: "boolean", nullable: false, defaultValue: true),
+                    Events = table.Column<List<WebhookEvent>>(type: "jsonb", nullable: false),
+                    Headers = table.Column<Dictionary<string, string>>(type: "jsonb", nullable: false, defaultValueSql: "'{}'::jsonb"),
+                    MaxRetries = table.Column<int>(type: "integer", nullable: false, defaultValue: 3),
+                    TimeoutSeconds = table.Column<int>(type: "integer", nullable: false, defaultValue: 30),
                     LastTriggeredAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     TotalDeliveries = table.Column<int>(type: "integer", nullable: false),
                     SuccessfulDeliveries = table.Column<int>(type: "integer", nullable: false),
@@ -436,7 +456,7 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_WebhookSubscriptions", x => x.Id);
+                    table.PrimaryKey("PK_webhook_subscriptions", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
@@ -714,9 +734,9 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
                 {
                     table.PrimaryKey("PK_WebhookDeliveries", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_WebhookDeliveries_WebhookSubscriptions_WebhookSubscriptionId",
+                        name: "FK_WebhookDeliveries_webhook_subscriptions_WebhookSubscription~",
                         column: x => x.WebhookSubscriptionId,
-                        principalTable: "WebhookSubscriptions",
+                        principalTable: "webhook_subscriptions",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
@@ -798,7 +818,7 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
                     OrderId = table.Column<Guid>(type: "uuid", nullable: false),
                     Status = table.Column<int>(type: "integer", nullable: false),
                     ChangedBy = table.Column<Guid>(type: "uuid", nullable: true),
-                    Reason = table.Column<string>(type: "text", nullable: true),
+                    Reason = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
                     ChangedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     OrderId1 = table.Column<Guid>(type: "uuid", nullable: true)
                 },
@@ -946,6 +966,11 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
                 column: "Status");
 
             migrationBuilder.CreateIndex(
+                name: "IX_OrderStatusHistory_ChangedAt",
+                table: "OrderStatusHistory",
+                column: "ChangedAt");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_OrderStatusHistory_OrderId",
                 table: "OrderStatusHistory",
                 column: "OrderId");
@@ -977,6 +1002,11 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
                 column: "Category");
 
             migrationBuilder.CreateIndex(
+                name: "IX_products_channel_product_id",
+                table: "products",
+                column: "channel_product_id");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_products_IsActive",
                 table: "products",
                 column: "IsActive");
@@ -986,6 +1016,11 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
                 table: "products",
                 column: "Sku",
                 unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_products_sync_status",
+                table: "products",
+                column: "sync_status");
 
             migrationBuilder.CreateIndex(
                 name: "IX_refresh_tokens_Token",
@@ -1089,6 +1124,11 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "IX_webhook_subscriptions_IsActive",
+                table: "webhook_subscriptions",
+                column: "IsActive");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_WebhookDeliveries_WebhookSubscriptionId",
                 table: "WebhookDeliveries",
                 column: "WebhookSubscriptionId");
@@ -1170,7 +1210,7 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
                 name: "users");
 
             migrationBuilder.DropTable(
-                name: "WebhookSubscriptions");
+                name: "webhook_subscriptions");
 
             migrationBuilder.DropTable(
                 name: "sales_channels");

@@ -10,7 +10,7 @@ namespace SuperEcomManager.Application.Features.Channels;
 /// <summary>
 /// Command to update channel sync settings.
 /// </summary>
-[RequirePermission("channels.manage")]
+[RequirePermission("channels.settings")]
 [RequireFeature("channels_management")]
 public record UpdateChannelSettingsCommand : IRequest<Result<ChannelDto>>, ITenantRequest
 {
@@ -20,6 +20,11 @@ public record UpdateChannelSettingsCommand : IRequest<Result<ChannelDto>>, ITena
 
     // Advanced sync settings
     public int? InitialSyncDays { get; init; }
+    public int? InventorySyncDays { get; init; }
+    public int? ProductSyncDays { get; init; }
+    public int? OrderSyncLimit { get; init; }
+    public int? InventorySyncLimit { get; init; }
+    public int? ProductSyncLimit { get; init; }
     public bool? SyncProductsEnabled { get; init; }
     public bool? AutoSyncProducts { get; init; }
 }
@@ -58,12 +63,23 @@ public class UpdateChannelSettingsCommandHandler : IRequestHandler<UpdateChannel
         channel.UpdateSyncSettings(autoSyncOrders, autoSyncInventory);
 
         // Update advanced sync settings if provided
-        if (request.InitialSyncDays.HasValue || request.SyncProductsEnabled.HasValue || request.AutoSyncProducts.HasValue)
+        if (request.InitialSyncDays.HasValue || request.InventorySyncDays.HasValue ||
+            request.ProductSyncDays.HasValue || request.OrderSyncLimit.HasValue ||
+            request.InventorySyncLimit.HasValue || request.ProductSyncLimit.HasValue ||
+            request.SyncProductsEnabled.HasValue || request.AutoSyncProducts.HasValue)
         {
             var initialSyncDays = request.InitialSyncDays ?? channel.InitialSyncDays;
+            var inventorySyncDays = request.InventorySyncDays ?? channel.InventorySyncDays;
+            var productSyncDays = request.ProductSyncDays ?? channel.ProductSyncDays;
+            var orderSyncLimit = request.OrderSyncLimit ?? channel.OrderSyncLimit;
+            var inventorySyncLimit = request.InventorySyncLimit ?? channel.InventorySyncLimit;
+            var productSyncLimit = request.ProductSyncLimit ?? channel.ProductSyncLimit;
             var syncProductsEnabled = request.SyncProductsEnabled ?? channel.SyncProductsEnabled;
             var autoSyncProducts = request.AutoSyncProducts ?? channel.AutoSyncProducts;
-            channel.UpdateAdvancedSyncSettings(initialSyncDays, syncProductsEnabled, autoSyncProducts);
+            channel.UpdateAdvancedSyncSettings(
+                initialSyncDays, inventorySyncDays, productSyncDays,
+                orderSyncLimit, inventorySyncLimit, productSyncLimit,
+                syncProductsEnabled, autoSyncProducts);
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -94,6 +110,11 @@ public class UpdateChannelSettingsCommandHandler : IRequestHandler<UpdateChannel
             HasCredentials = channel.ApiKey != null,
             LastError = channel.LastError,
             InitialSyncDays = channel.InitialSyncDays,
+            InventorySyncDays = channel.InventorySyncDays,
+            ProductSyncDays = channel.ProductSyncDays,
+            OrderSyncLimit = channel.OrderSyncLimit,
+            InventorySyncLimit = channel.InventorySyncLimit,
+            ProductSyncLimit = channel.ProductSyncLimit,
             SyncProductsEnabled = channel.SyncProductsEnabled,
             AutoSyncProducts = channel.AutoSyncProducts,
             LastProductSyncAt = channel.LastProductSyncAt,

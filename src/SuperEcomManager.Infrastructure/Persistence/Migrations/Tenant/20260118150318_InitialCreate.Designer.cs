@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
+using SuperEcomManager.Domain.Enums;
 using SuperEcomManager.Infrastructure.Persistence;
 
 #nullable disable
@@ -13,8 +14,8 @@ using SuperEcomManager.Infrastructure.Persistence;
 namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
 {
     [DbContext(typeof(TenantDbContext))]
-    [Migration("20260117032835_AddShopifyCredentialsToSalesChannel")]
-    partial class AddShopifyCredentialsToSalesChannel
+    [Migration("20260118150318_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -24,7 +25,6 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
                 .HasAnnotation("ProductVersion", "9.0.12")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
-            NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "hstore");
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
             modelBuilder.Entity("SuperEcomManager.Domain.Entities.Audit.AuditLog", b =>
@@ -105,6 +105,9 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
                     b.Property<bool>("AutoSyncOrders")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("AutoSyncProducts")
+                        .HasColumnType("boolean");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -124,6 +127,15 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<int?>("InitialSyncDays")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("InventorySyncDays")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("InventorySyncLimit")
+                        .HasColumnType("integer");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
@@ -135,6 +147,12 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
 
                     b.Property<string>("LastError")
                         .HasColumnType("text");
+
+                    b.Property<DateTime?>("LastInventorySyncAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("LastProductSyncAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("LastSyncAt")
                         .HasColumnType("timestamp with time zone");
@@ -148,6 +166,15 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<int?>("OrderSyncLimit")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ProductSyncDays")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ProductSyncLimit")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Scopes")
                         .HasColumnType("text");
 
@@ -158,6 +185,9 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
                     b.Property<string>("StoreUrl")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
+
+                    b.Property<bool>("SyncProductsEnabled")
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Type")
                         .IsRequired()
@@ -177,7 +207,7 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
                     b.HasKey("Id");
 
                     b.HasIndex("DeletedAt")
-                        .HasFilter("deleted_at IS NULL");
+                        .HasFilter("\"DeletedAt\" IS NULL");
 
                     b.HasIndex("Type");
 
@@ -446,7 +476,7 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
                     b.HasKey("Id");
 
                     b.HasIndex("DeletedAt")
-                        .HasFilter("deleted_at IS NULL");
+                        .HasFilter("\"DeletedAt\" IS NULL");
 
                     b.HasIndex("Email")
                         .IsUnique();
@@ -541,6 +571,11 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<string>("ChannelProductId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("channel_product_id");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -568,6 +603,10 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
+                    b.Property<DateTime?>("LastSyncedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_synced_at");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(500)
@@ -577,6 +616,12 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
+
+                    b.Property<int>("SyncStatus")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("sync_status");
 
                     b.Property<decimal?>("TaxRate")
                         .HasPrecision(5, 2)
@@ -598,10 +643,14 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
 
                     b.HasIndex("Category");
 
+                    b.HasIndex("ChannelProductId");
+
                     b.HasIndex("IsActive");
 
                     b.HasIndex("Sku")
                         .IsUnique();
+
+                    b.HasIndex("SyncStatus");
 
                     b.ToTable("products", (string)null);
                 });
@@ -1057,7 +1106,7 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
                     b.HasIndex("CreatedAt");
 
                     b.HasIndex("DeletedAt")
-                        .HasFilter("deleted_at IS NULL");
+                        .HasFilter("\"DeletedAt\" IS NULL");
 
                     b.HasIndex("OrderDate");
 
@@ -1144,18 +1193,21 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
                         .HasColumnType("uuid");
 
                     b.Property<string>("Reason")
-                        .HasColumnType("text");
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ChangedAt");
+
                     b.HasIndex("OrderId");
 
                     b.HasIndex("OrderId1");
 
-                    b.ToTable("OrderStatusHistory");
+                    b.ToTable("OrderStatusHistory", (string)null);
                 });
 
             modelBuilder.Entity("SuperEcomManager.Domain.Entities.Settings.TenantSettings", b =>
@@ -1558,7 +1610,7 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
                     b.HasIndex("CourierType");
 
                     b.HasIndex("DeletedAt")
-                        .HasFilter("deleted_at IS NULL");
+                        .HasFilter("\"DeletedAt\" IS NULL");
 
                     b.HasIndex("IsActive");
 
@@ -1631,39 +1683,49 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
                     b.Property<Guid?>("CreatedBy")
                         .HasColumnType("uuid");
 
-                    b.PrimitiveCollection<int[]>("Events")
+                    b.PrimitiveCollection<List<WebhookEvent>>("Events")
                         .IsRequired()
-                        .HasColumnType("integer[]");
+                        .HasColumnType("jsonb");
 
                     b.Property<int>("FailedDeliveries")
                         .HasColumnType("integer");
 
                     b.Property<Dictionary<string, string>>("Headers")
                         .IsRequired()
-                        .HasColumnType("hstore");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasDefaultValueSql("'{}'::jsonb");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
 
                     b.Property<DateTime?>("LastTriggeredAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("MaxRetries")
-                        .HasColumnType("integer");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(3);
 
                     b.Property<string>("Name")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
 
                     b.Property<string>("Secret")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
 
                     b.Property<int>("SuccessfulDeliveries")
                         .HasColumnType("integer");
 
                     b.Property<int>("TimeoutSeconds")
-                        .HasColumnType("integer");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(30);
 
                     b.Property<int>("TotalDeliveries")
                         .HasColumnType("integer");
@@ -1676,11 +1738,14 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
 
                     b.Property<string>("Url")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
 
                     b.HasKey("Id");
 
-                    b.ToTable("WebhookSubscriptions");
+                    b.HasIndex("IsActive");
+
+                    b.ToTable("webhook_subscriptions", (string)null);
                 });
 
             modelBuilder.Entity("SuperEcomManager.Domain.Entities.Finance.Expense", b =>
@@ -1781,6 +1846,30 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
 
             modelBuilder.Entity("SuperEcomManager.Domain.Entities.Inventory.Product", b =>
                 {
+                    b.OwnsOne("SuperEcomManager.Domain.ValueObjects.Money", "ChannelSellingPrice", b1 =>
+                        {
+                            b1.Property<Guid>("ProductId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<decimal>("Amount")
+                                .HasPrecision(18, 2)
+                                .HasColumnType("numeric(18,2)")
+                                .HasColumnName("channel_selling_price");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasMaxLength(3)
+                                .HasColumnType("character varying(3)")
+                                .HasColumnName("channel_selling_currency");
+
+                            b1.HasKey("ProductId");
+
+                            b1.ToTable("products");
+
+                            b1.WithOwner()
+                                .HasForeignKey("ProductId");
+                        });
+
                     b.OwnsOne("SuperEcomManager.Domain.ValueObjects.Money", "CostPrice", b1 =>
                         {
                             b1.Property<Guid>("ProductId")
@@ -1828,6 +1917,8 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
                             b1.WithOwner()
                                 .HasForeignKey("ProductId");
                         });
+
+                    b.Navigation("ChannelSellingPrice");
 
                     b.Navigation("CostPrice")
                         .IsRequired();

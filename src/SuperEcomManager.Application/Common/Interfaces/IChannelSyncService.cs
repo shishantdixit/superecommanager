@@ -36,6 +36,31 @@ public interface IChannelSyncService
     Task<ChannelSyncResult> SyncInventoryAsync(
         Guid channelId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets locations for a specific channel.
+    /// </summary>
+    Task<List<ChannelLocationDto>> GetLocationsAsync(
+        Guid channelId,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// DTO for channel locations.
+/// </summary>
+public class ChannelLocationDto
+{
+    public long Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? Address1 { get; set; }
+    public string? Address2 { get; set; }
+    public string? City { get; set; }
+    public string? Province { get; set; }
+    public string? Country { get; set; }
+    public string? Zip { get; set; }
+    public string? Phone { get; set; }
+    public bool Active { get; set; }
+    public bool Legacy { get; set; }
 }
 
 /// <summary>

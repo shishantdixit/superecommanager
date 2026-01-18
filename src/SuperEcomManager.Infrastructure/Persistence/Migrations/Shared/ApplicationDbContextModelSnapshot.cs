@@ -497,7 +497,7 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Shared
                     b.HasKey("Id");
 
                     b.HasIndex("DeletedAt")
-                        .HasFilter("deleted_at IS NULL");
+                        .HasFilter("\"DeletedAt\" IS NULL");
 
                     b.HasIndex("SchemaName")
                         .IsUnique();
