@@ -13,10 +13,12 @@ import {
   Input,
   Select,
   SectionLoader,
+  ProductSearchInput,
 } from '@/components/ui';
+import type { SelectedProduct } from '@/components/ui/ProductSearchInput';
 import { useCreateOrder, useChannels } from '@/hooks';
 import type { CreateOrderRequest, CreateOrderItemInput, CreateAddressInput } from '@/services/orders.service';
-import { ArrowLeft, Plus, Trash2, Loader2, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Loader2, AlertCircle, AlertTriangle } from 'lucide-react';
 
 const paymentMethodOptions = [
   { value: 'COD', label: 'Cash on Delivery' },
@@ -86,6 +88,28 @@ const defaultAddress: CreateAddressInput = {
   phone: '',
 };
 
+// Validation helpers
+const isValidEmail = (email: string): boolean => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+};
+
+const isValidIndianPhone = (phone: string): boolean => {
+  // Indian phone: 10 digits, optionally starting with +91 or 91
+  const cleanPhone = phone.replace(/[\s\-()]/g, '');
+  const phoneRegex = /^(\+91|91)?[6-9]\d{9}$/;
+  return phoneRegex.test(cleanPhone);
+};
+
+const isValidPinCode = (pin: string): boolean => {
+  // Indian PIN code: exactly 6 digits, first digit 1-9
+  const pinRegex = /^[1-9]\d{5}$/;
+  return pinRegex.test(pin.trim());
+};
+
+const MAX_QUANTITY = 9999;
+const MAX_UNIT_PRICE = 10000000; // 1 crore
+
 export default function CreateOrderPage() {
   const router = useRouter();
   const createOrder = useCreateOrder();
@@ -104,6 +128,7 @@ export default function CreateOrderPage() {
   const [customerNotes, setCustomerNotes] = useState('');
   const [internalNotes, setInternalNotes] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [hasSubmitted, setHasSubmitted] = useState(false);
 
   // Build channel options - connected channels + Manual option
   const channelOptions = [
@@ -145,51 +170,162 @@ export default function CreateOrderPage() {
     setShippingAddress({ ...shippingAddress, [field]: value });
   };
 
+  const handleProductSelect = (index: number, product: SelectedProduct) => {
+    const newItems = [...items];
+    newItems[index] = {
+      ...newItems[index],
+      sku: product.sku,
+      name: product.name,
+      variantName: product.variantName || '',
+      unitPrice: product.unitPrice,
+    };
+    setItems(newItems);
+  };
+
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
+    // Customer name validation
     if (!customerName.trim()) {
       newErrors.customerName = 'Customer name is required';
+    } else if (customerName.trim().length < 2) {
+      newErrors.customerName = 'Customer name must be at least 2 characters';
+    } else if (customerName.trim().length > 100) {
+      newErrors.customerName = 'Customer name must not exceed 100 characters';
     }
 
+    // Phone validation (required for COD, format check if provided)
+    const hasPhone = customerPhone.trim() || shippingAddress.phone?.trim();
+    if (paymentMethod === 'COD' && !hasPhone) {
+      newErrors.customerPhone = 'Phone number is required for Cash on Delivery orders';
+    } else if (customerPhone.trim() && !isValidIndianPhone(customerPhone)) {
+      newErrors.customerPhone = 'Please enter a valid 10-digit Indian phone number';
+    }
+
+    // Email validation (optional but must be valid if provided)
+    if (customerEmail.trim() && !isValidEmail(customerEmail)) {
+      newErrors.customerEmail = 'Please enter a valid email address';
+    }
+
+    // Shipping address validations
     if (!shippingAddress.name.trim()) {
       newErrors.addressName = 'Recipient name is required';
+    } else if (shippingAddress.name.trim().length < 2) {
+      newErrors.addressName = 'Recipient name must be at least 2 characters';
     }
+
     if (!shippingAddress.line1.trim()) {
       newErrors.addressLine1 = 'Address line 1 is required';
+    } else if (shippingAddress.line1.trim().length < 5) {
+      newErrors.addressLine1 = 'Address must be at least 5 characters';
+    } else if (shippingAddress.line1.trim().length > 200) {
+      newErrors.addressLine1 = 'Address must not exceed 200 characters';
     }
+
     if (!shippingAddress.city.trim()) {
       newErrors.addressCity = 'City is required';
+    } else if (shippingAddress.city.trim().length < 2) {
+      newErrors.addressCity = 'City name must be at least 2 characters';
     }
+
     if (!shippingAddress.state) {
       newErrors.addressState = 'State is required';
     }
+
     if (!shippingAddress.postalCode.trim()) {
       newErrors.addressPostalCode = 'PIN code is required';
+    } else if (!isValidPinCode(shippingAddress.postalCode)) {
+      newErrors.addressPostalCode = 'Please enter a valid 6-digit PIN code';
+    }
+
+    // Shipping address phone validation
+    if (shippingAddress.phone?.trim() && !isValidIndianPhone(shippingAddress.phone)) {
+      newErrors.addressPhone = 'Please enter a valid 10-digit phone number';
+    }
+
+    // Check for duplicate SKUs
+    const skus = items.map(item => item.sku.trim().toUpperCase()).filter(sku => sku);
+    const duplicateSkus = skus.filter((sku, index) => skus.indexOf(sku) !== index);
+    if (duplicateSkus.length > 0) {
+      newErrors.duplicateSku = `Duplicate SKU found: ${[...new Set(duplicateSkus)].join(', ')}`;
     }
 
     // Validate items
     items.forEach((item, index) => {
       if (!item.sku.trim()) {
         newErrors[`item${index}Sku`] = 'SKU is required';
+      } else if (item.sku.trim().length > 100) {
+        newErrors[`item${index}Sku`] = 'SKU must not exceed 100 characters';
       }
+
       if (!item.name.trim()) {
         newErrors[`item${index}Name`] = 'Product name is required';
+      } else if (item.name.trim().length > 200) {
+        newErrors[`item${index}Name`] = 'Product name must not exceed 200 characters';
       }
+
       if (item.quantity <= 0) {
         newErrors[`item${index}Quantity`] = 'Quantity must be at least 1';
+      } else if (item.quantity > MAX_QUANTITY) {
+        newErrors[`item${index}Quantity`] = `Quantity cannot exceed ${MAX_QUANTITY}`;
+      } else if (!Number.isInteger(item.quantity)) {
+        newErrors[`item${index}Quantity`] = 'Quantity must be a whole number';
       }
+
       if (item.unitPrice <= 0) {
         newErrors[`item${index}UnitPrice`] = 'Unit price must be greater than 0';
+      } else if (item.unitPrice > MAX_UNIT_PRICE) {
+        newErrors[`item${index}UnitPrice`] = 'Unit price exceeds maximum allowed value';
+      }
+
+      // Discount validation
+      const lineTotal = item.unitPrice * item.quantity;
+      if (item.discountAmount < 0) {
+        newErrors[`item${index}Discount`] = 'Discount cannot be negative';
+      } else if (item.discountAmount > lineTotal) {
+        newErrors[`item${index}Discount`] = 'Discount cannot exceed line total';
+      }
+
+      // Tax validation
+      if (item.taxAmount < 0) {
+        newErrors[`item${index}Tax`] = 'Tax cannot be negative';
       }
     });
 
+    // Order level discount validation
+    if (discountAmount < 0) {
+      newErrors.orderDiscount = 'Order discount cannot be negative';
+    } else if (discountAmount > subtotal) {
+      newErrors.orderDiscount = 'Order discount cannot exceed subtotal';
+    }
+
+    // Shipping amount validation
+    if (shippingAmount < 0) {
+      newErrors.shippingAmount = 'Shipping amount cannot be negative';
+    }
+
+    // Total validation
+    if (total <= 0) {
+      newErrors.orderTotal = 'Order total must be greater than zero';
+    }
+
     setErrors(newErrors);
+
+    // Scroll to first error
+    if (Object.keys(newErrors).length > 0) {
+      const firstErrorKey = Object.keys(newErrors)[0];
+      const errorElement = document.querySelector(`[data-error="${firstErrorKey}"]`);
+      if (errorElement) {
+        errorElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+
     return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setHasSubmitted(true);
 
     if (!validateForm()) {
       return;
@@ -234,6 +370,23 @@ export default function CreateOrderPage() {
       </Link>
 
       <form onSubmit={handleSubmit}>
+        {/* Validation Summary */}
+        {hasSubmitted && Object.keys(errors).length > 0 && (
+          <div className="mb-6 rounded-lg border border-error/50 bg-error/10 p-4" data-error="summary">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-error flex-shrink-0 mt-0.5" />
+              <div>
+                <h3 className="font-medium text-error">Please fix the following errors:</h3>
+                <ul className="mt-2 list-disc list-inside text-sm text-error/80 space-y-1">
+                  {Object.values(errors).map((error, index) => (
+                    <li key={index}>{error}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Main Content */}
           <div className="space-y-6 lg:col-span-2">
@@ -244,7 +397,7 @@ export default function CreateOrderPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
+                  <div data-error="customerName">
                     <label className="mb-1.5 block text-sm font-medium">
                       Customer Name <span className="text-error">*</span>
                     </label>
@@ -253,24 +406,30 @@ export default function CreateOrderPage() {
                       onChange={(e) => setCustomerName(e.target.value)}
                       placeholder="Enter customer name"
                       error={errors.customerName}
+                      maxLength={100}
                     />
                   </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-medium">Phone Number</label>
+                  <div data-error="customerPhone">
+                    <label className="mb-1.5 block text-sm font-medium">
+                      Phone Number {paymentMethod === 'COD' && <span className="text-error">*</span>}
+                    </label>
                     <Input
                       value={customerPhone}
                       onChange={(e) => setCustomerPhone(e.target.value)}
-                      placeholder="Enter phone number"
+                      placeholder="10-digit mobile number"
+                      error={errors.customerPhone}
+                      maxLength={15}
                     />
                   </div>
                 </div>
-                <div>
+                <div data-error="customerEmail">
                   <label className="mb-1.5 block text-sm font-medium">Email</label>
                   <Input
                     type="email"
                     value={customerEmail}
                     onChange={(e) => setCustomerEmail(e.target.value)}
                     placeholder="Enter email address"
+                    error={errors.customerEmail}
                   />
                 </div>
               </CardContent>
@@ -283,7 +442,7 @@ export default function CreateOrderPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
+                  <div data-error="addressName">
                     <label className="mb-1.5 block text-sm font-medium">
                       Recipient Name <span className="text-error">*</span>
                     </label>
@@ -292,18 +451,21 @@ export default function CreateOrderPage() {
                       onChange={(e) => handleAddressChange('name', e.target.value)}
                       placeholder="Full name"
                       error={errors.addressName}
+                      maxLength={100}
                     />
                   </div>
-                  <div>
+                  <div data-error="addressPhone">
                     <label className="mb-1.5 block text-sm font-medium">Phone</label>
                     <Input
                       value={shippingAddress.phone || ''}
                       onChange={(e) => handleAddressChange('phone', e.target.value)}
-                      placeholder="Phone number"
+                      placeholder="10-digit mobile number"
+                      error={errors.addressPhone}
+                      maxLength={15}
                     />
                   </div>
                 </div>
-                <div>
+                <div data-error="addressLine1">
                   <label className="mb-1.5 block text-sm font-medium">
                     Address Line 1 <span className="text-error">*</span>
                   </label>
@@ -312,6 +474,7 @@ export default function CreateOrderPage() {
                     onChange={(e) => handleAddressChange('line1', e.target.value)}
                     placeholder="House/Flat No., Building, Street"
                     error={errors.addressLine1}
+                    maxLength={200}
                   />
                 </div>
                 <div>
@@ -320,10 +483,11 @@ export default function CreateOrderPage() {
                     value={shippingAddress.line2 || ''}
                     onChange={(e) => handleAddressChange('line2', e.target.value)}
                     placeholder="Landmark, Area (Optional)"
+                    maxLength={200}
                   />
                 </div>
                 <div className="grid gap-4 sm:grid-cols-3">
-                  <div>
+                  <div data-error="addressCity">
                     <label className="mb-1.5 block text-sm font-medium">
                       City <span className="text-error">*</span>
                     </label>
@@ -332,9 +496,10 @@ export default function CreateOrderPage() {
                       onChange={(e) => handleAddressChange('city', e.target.value)}
                       placeholder="City"
                       error={errors.addressCity}
+                      maxLength={100}
                     />
                   </div>
-                  <div>
+                  <div data-error="addressState">
                     <label className="mb-1.5 block text-sm font-medium">
                       State <span className="text-error">*</span>
                     </label>
@@ -345,7 +510,7 @@ export default function CreateOrderPage() {
                       error={errors.addressState}
                     />
                   </div>
-                  <div>
+                  <div data-error="addressPostalCode">
                     <label className="mb-1.5 block text-sm font-medium">
                       PIN Code <span className="text-error">*</span>
                     </label>
@@ -376,8 +541,14 @@ export default function CreateOrderPage() {
                 </Button>
               </CardHeader>
               <CardContent className="space-y-4">
+                {errors.duplicateSku && (
+                  <div className="rounded-md bg-error/10 p-3 text-sm text-error flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                    {errors.duplicateSku}
+                  </div>
+                )}
                 {items.map((item, index) => (
-                  <div key={index} className="rounded-lg border p-4">
+                  <div key={index} className="rounded-lg border p-4" data-error={`item${index}Sku`}>
                     <div className="mb-3 flex items-center justify-between">
                       <span className="text-sm font-medium">Item {index + 1}</span>
                       {items.length > 1 && (
@@ -392,6 +563,24 @@ export default function CreateOrderPage() {
                         </Button>
                       )}
                     </div>
+
+                    {/* Product Search */}
+                    <div className="mb-4">
+                      <label className="mb-1.5 block text-sm font-medium">
+                        Search Product
+                      </label>
+                      <ProductSearchInput
+                        onSelect={(product) => handleProductSelect(index, product)}
+                        placeholder="Search by product name or SKU..."
+                        channelId={selectedChannelId || undefined}
+                      />
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {selectedChannelId
+                          ? `Showing products from ${selectedChannel?.name || 'selected channel'}. Select "Manual Order" to see all products.`
+                          : 'Search and select a product to auto-fill details, or enter manually below'}
+                      </p>
+                    </div>
+
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div>
                         <label className="mb-1.5 block text-sm font-medium">
@@ -399,9 +588,10 @@ export default function CreateOrderPage() {
                         </label>
                         <Input
                           value={item.sku}
-                          onChange={(e) => handleItemChange(index, 'sku', e.target.value)}
+                          onChange={(e) => handleItemChange(index, 'sku', e.target.value.toUpperCase())}
                           placeholder="Product SKU"
                           error={errors[`item${index}Sku`]}
+                          maxLength={100}
                         />
                       </div>
                       <div>
@@ -413,6 +603,7 @@ export default function CreateOrderPage() {
                           onChange={(e) => handleItemChange(index, 'name', e.target.value)}
                           placeholder="Product name"
                           error={errors[`item${index}Name`]}
+                          maxLength={200}
                         />
                       </div>
                     </div>
@@ -424,14 +615,15 @@ export default function CreateOrderPage() {
                         <Input
                           type="number"
                           min="1"
+                          max={MAX_QUANTITY}
                           value={item.quantity}
-                          onChange={(e) => handleItemChange(index, 'quantity', parseInt(e.target.value) || 1)}
+                          onChange={(e) => handleItemChange(index, 'quantity', Math.min(parseInt(e.target.value) || 1, MAX_QUANTITY))}
                           error={errors[`item${index}Quantity`]}
                         />
                       </div>
                       <div>
                         <label className="mb-1.5 block text-sm font-medium">
-                          Unit Price <span className="text-error">*</span>
+                          Unit Price (₹) <span className="text-error">*</span>
                         </label>
                         <Input
                           type="number"
@@ -443,23 +635,25 @@ export default function CreateOrderPage() {
                         />
                       </div>
                       <div>
-                        <label className="mb-1.5 block text-sm font-medium">Discount</label>
+                        <label className="mb-1.5 block text-sm font-medium">Discount (₹)</label>
                         <Input
                           type="number"
                           min="0"
                           step="0.01"
                           value={item.discountAmount}
                           onChange={(e) => handleItemChange(index, 'discountAmount', parseFloat(e.target.value) || 0)}
+                          error={errors[`item${index}Discount`]}
                         />
                       </div>
                       <div>
-                        <label className="mb-1.5 block text-sm font-medium">Tax</label>
+                        <label className="mb-1.5 block text-sm font-medium">Tax (₹)</label>
                         <Input
                           type="number"
                           min="0"
                           step="0.01"
                           value={item.taxAmount}
                           onChange={(e) => handleItemChange(index, 'taxAmount', parseFloat(e.target.value) || 0)}
+                          error={errors[`item${index}Tax`]}
                         />
                       </div>
                     </div>
@@ -574,43 +768,63 @@ export default function CreateOrderPage() {
                     <span className="text-muted-foreground">Subtotal</span>
                     <span>₹{subtotal.toFixed(2)}</span>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Shipping</span>
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={shippingAmount}
-                      onChange={(e) => setShippingAmount(parseFloat(e.target.value) || 0)}
-                      className="w-24 text-right"
-                    />
+                  <div data-error="shippingAmount">
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Shipping</span>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={shippingAmount}
+                        onChange={(e) => setShippingAmount(Math.max(0, parseFloat(e.target.value) || 0))}
+                        className="w-24 text-right"
+                      />
+                    </div>
+                    {errors.shippingAmount && (
+                      <p className="text-xs text-error mt-1 text-right">{errors.shippingAmount}</p>
+                    )}
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Discount</span>
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={discountAmount}
-                      onChange={(e) => setDiscountAmount(parseFloat(e.target.value) || 0)}
-                      className="w-24 text-right"
-                    />
+                  <div data-error="orderDiscount">
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Discount</span>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={discountAmount}
+                        onChange={(e) => setDiscountAmount(Math.max(0, parseFloat(e.target.value) || 0))}
+                        className="w-24 text-right"
+                      />
+                    </div>
+                    {errors.orderDiscount && (
+                      <p className="text-xs text-error mt-1 text-right">{errors.orderDiscount}</p>
+                    )}
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Tax</span>
                     <span>₹{totalTax.toFixed(2)}</span>
                   </div>
-                  <div className="border-t pt-2">
+                  <div className="border-t pt-2" data-error="orderTotal">
                     <div className="flex justify-between text-base font-semibold">
                       <span>Total</span>
-                      <span>₹{total.toFixed(2)}</span>
+                      <span className={total <= 0 ? 'text-error' : ''}>₹{total.toFixed(2)}</span>
                     </div>
+                    {errors.orderTotal && (
+                      <p className="text-xs text-error mt-1 text-right">{errors.orderTotal}</p>
+                    )}
                   </div>
                 </div>
 
                 {createOrder.error && (
                   <div className="rounded-md bg-error/10 p-3 text-sm text-error">
                     Failed to create order. Please try again.
+                  </div>
+                )}
+
+                {hasSubmitted && Object.keys(errors).length > 0 && (
+                  <div className="rounded-md bg-warning/10 p-3 text-sm text-warning flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                    Please fix {Object.keys(errors).length} validation error{Object.keys(errors).length > 1 ? 's' : ''} above
                   </div>
                 )}
 

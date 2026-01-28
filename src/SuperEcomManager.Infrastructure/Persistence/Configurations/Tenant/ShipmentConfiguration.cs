@@ -44,6 +44,15 @@ public class ShipmentConfiguration : IEntityTypeConfiguration<Shipment>
         builder.Property(s => s.CourierResponse)
             .HasMaxLength(5000);
 
+        builder.Property(s => s.ExternalOrderId)
+            .HasMaxLength(50);
+
+        builder.Property(s => s.ExternalShipmentId)
+            .HasMaxLength(50);
+
+        builder.HasIndex(s => s.ExternalOrderId);
+        builder.HasIndex(s => s.ExternalShipmentId);
+
         // Configure Address value objects
         builder.OwnsOne(s => s.PickupAddress, address =>
         {

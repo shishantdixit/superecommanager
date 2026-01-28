@@ -132,12 +132,38 @@ public class ShipmentsController : ApiControllerBase
     public async Task<ActionResult<ApiResponse<ShipmentDetailDto>>> CreateShipment(
         [FromBody] CreateShipmentRequest request)
     {
+        Guid? courierAccountId = null;
+        CourierType? courierType = null;
+
+        // Try to parse as GUID (courier account ID) first
+        if (Guid.TryParse(request.CourierCode, out var accountId))
+        {
+            courierAccountId = accountId;
+        }
+        // Otherwise, try to parse as CourierType enum for backward compatibility
+        else if (Enum.TryParse<CourierType>(request.CourierCode, true, out var parsedCourierType))
+        {
+            courierType = parsedCourierType;
+        }
+        else
+        {
+            return BadRequestResponse<ShipmentDetailDto>($"Invalid courier code: {request.CourierCode}");
+        }
+
         var command = new CreateShipmentCommand
         {
             OrderId = request.OrderId,
-            CourierType = request.CourierType,
+            CourierAccountId = courierAccountId,
+            CourierType = courierType,
             PickupAddress = request.PickupAddress,
-            Dimensions = request.Dimensions,
+            Dimensions = new DimensionsDto
+            {
+                Weight = request.Weight,
+                Length = request.Length ?? 10,
+                Width = request.Width ?? 10,
+                Height = request.Height ?? 10
+            },
+            ServiceCode = request.ServiceCode,
             Items = request.Items
         };
 
@@ -260,6 +286,61 @@ public class ShipmentsController : ApiControllerBase
 
         return OkResponse(result.Value!.Items.ToList());
     }
+
+    /// <summary>
+    /// Get available couriers for a shipment (serviceability check).
+    /// Returns list of couriers that can deliver to the shipment's destination.
+    /// </summary>
+    [HttpGet("{id:guid}/available-couriers")]
+    [ProducesResponseType(typeof(ApiResponse<List<AvailableCourierDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<List<AvailableCourierDto>>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<List<AvailableCourierDto>>), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ApiResponse<List<AvailableCourierDto>>>> GetAvailableCouriers(Guid id)
+    {
+        var query = new GetAvailableCouriersQuery { ShipmentId = id };
+        var result = await Mediator.Send(query);
+
+        if (result.IsFailure)
+        {
+            if (result.Errors.Any(e => e.Contains("not found")))
+                return NotFoundResponse<List<AvailableCourierDto>>(string.Join(", ", result.Errors));
+
+            return BadRequestResponse<List<AvailableCourierDto>>(string.Join(", ", result.Errors));
+        }
+
+        return OkResponse(result.Value!);
+    }
+
+    /// <summary>
+    /// Assign a courier to a shipment.
+    /// Used for shipments that were created in the courier system but don't have AWB assigned yet.
+    /// </summary>
+    [HttpPost("{id:guid}/assign-courier")]
+    [ProducesResponseType(typeof(ApiResponse<ShipmentDetailDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<ShipmentDetailDto>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<ShipmentDetailDto>), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ApiResponse<ShipmentDetailDto>>> AssignCourier(
+        Guid id,
+        [FromBody] AssignCourierRequest request)
+    {
+        var command = new AssignCourierCommand
+        {
+            ShipmentId = id,
+            CourierId = request.CourierId
+        };
+
+        var result = await Mediator.Send(command);
+
+        if (result.IsFailure)
+        {
+            if (result.Errors.Any(e => e.Contains("not found")))
+                return NotFoundResponse<ShipmentDetailDto>(string.Join(", ", result.Errors));
+
+            return BadRequestResponse<ShipmentDetailDto>(string.Join(", ", result.Errors));
+        }
+
+        return OkResponse(result.Value!, "Courier assigned successfully.");
+    }
 }
 
 #region Request Models
@@ -270,9 +351,14 @@ public class ShipmentsController : ApiControllerBase
 public record CreateShipmentRequest
 {
     public Guid OrderId { get; init; }
-    public CourierType CourierType { get; init; }
+    public string CourierCode { get; init; } = string.Empty;
+    public decimal Weight { get; init; }
+    public decimal? Length { get; init; }
+    public decimal? Width { get; init; }
+    public decimal? Height { get; init; }
     public AddressDto? PickupAddress { get; init; }
-    public DimensionsDto? Dimensions { get; init; }
+    public string? PickupDate { get; init; }
+    public string? ServiceCode { get; init; }
     public List<CreateShipmentItemDto>? Items { get; init; }
 }
 
@@ -304,6 +390,17 @@ public record FilterShipmentsRequest
     public int PageSize { get; init; } = 20;
     public ShipmentSortBy SortBy { get; init; } = ShipmentSortBy.CreatedAt;
     public bool SortDescending { get; init; } = true;
+}
+
+/// <summary>
+/// Request model for assigning a courier to a shipment.
+/// </summary>
+public record AssignCourierRequest
+{
+    /// <summary>
+    /// The courier ID to assign. If null, Shiprocket will auto-select the recommended courier.
+    /// </summary>
+    public int? CourierId { get; init; }
 }
 
 #endregion

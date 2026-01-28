@@ -15,7 +15,7 @@ import {
   SectionLoader,
   Badge,
 } from '@/components/ui';
-import { useOrder, useUpdateOrder } from '@/hooks';
+import { useOrder, useUpdateOrder, useUpdateOrderStatus } from '@/hooks';
 import type { UpdateOrderRequest, CreateOrderItemInput, CreateAddressInput } from '@/services/orders.service';
 import { ArrowLeft, Plus, Trash2, Loader2, AlertCircle, AlertTriangle } from 'lucide-react';
 
@@ -97,11 +97,28 @@ const defaultAddress: CreateAddressInput = {
 // Statuses that cannot be edited
 const NON_EDITABLE_STATUSES = ['Shipped', 'Delivered', 'Cancelled', 'Returned', 'RTO'];
 
+// Define allowed status transitions
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  Pending: ['Confirmed', 'Cancelled'],
+  Confirmed: ['Processing', 'Cancelled'],
+  Processing: ['Shipped', 'Cancelled'],
+};
+
+// Status labels for display
+const STATUS_LABELS: Record<string, string> = {
+  Pending: 'Pending',
+  Confirmed: 'Confirmed',
+  Processing: 'Processing',
+  Shipped: 'Shipped',
+  Cancelled: 'Cancelled',
+};
+
 export default function EditOrderPage({ params }: PageProps) {
   const { id: orderId } = use(params);
   const router = useRouter();
   const { data: order, isLoading: orderLoading, error: orderError } = useOrder(orderId);
   const updateOrder = useUpdateOrder();
+  const updateStatus = useUpdateOrderStatus();
 
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
@@ -117,6 +134,7 @@ export default function EditOrderPage({ params }: PageProps) {
   const [syncToChannel, setSyncToChannel] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isInitialized, setIsInitialized] = useState(false);
+  const [statusRemarks, setStatusRemarks] = useState('');
 
   // Check if order originated from an external channel
   const hasExternalChannel = order && order.externalOrderId && order.channelType && order.channelType !== 'Custom';
@@ -175,6 +193,24 @@ export default function EditOrderPage({ params }: PageProps) {
 
   // Check if order can be edited
   const canEdit = order && !NON_EDITABLE_STATUSES.includes(order.status);
+
+  // Get allowed next statuses for the current order
+  const allowedStatusTransitions = order ? STATUS_TRANSITIONS[order.status] || [] : [];
+
+  const handleStatusChange = async (newStatus: string) => {
+    try {
+      await updateStatus.mutateAsync({
+        id: orderId,
+        data: {
+          status: newStatus as import('@/types/api').OrderStatus,
+          remarks: statusRemarks || undefined,
+        },
+      });
+      setStatusRemarks('');
+    } catch (err) {
+      console.error('Failed to update order status:', err);
+    }
+  };
 
   // Calculate totals
   const subtotal = items.reduce((sum, item) => sum + (item.unitPrice * item.quantity - item.discountAmount), 0);
@@ -330,7 +366,7 @@ export default function EditOrderPage({ params }: PageProps) {
 
   return (
     <DashboardLayout title={`Edit Order ${order.orderNumber}`}>
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4">
         <Link
           href={`/orders/${orderId}`}
           className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
@@ -338,7 +374,6 @@ export default function EditOrderPage({ params }: PageProps) {
           <ArrowLeft className="h-4 w-4" />
           Back to Order Details
         </Link>
-        <Badge variant="info">{order.status}</Badge>
       </div>
 
       <form onSubmit={handleSubmit}>
@@ -611,6 +646,66 @@ export default function EditOrderPage({ params }: PageProps) {
 
           {/* Sidebar */}
           <div className="space-y-6">
+            {/* Order Status */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Order Status</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Current Status:</span>
+                  <Badge variant="info">{order.status}</Badge>
+                </div>
+
+                {allowedStatusTransitions.length > 0 && (
+                  <div className="rounded-lg border bg-muted/50 p-4">
+                    <h4 className="mb-3 text-sm font-medium">Change Status</h4>
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap gap-2">
+                        {allowedStatusTransitions.map((status) => (
+                          <Button
+                            key={status}
+                            type="button"
+                            variant={status === 'Cancelled' ? 'outline' : 'primary'}
+                            size="sm"
+                            onClick={() => handleStatusChange(status)}
+                            disabled={updateStatus.isPending}
+                            className={
+                              status === 'Cancelled'
+                                ? 'border-error text-error hover:bg-error/10'
+                                : ''
+                            }
+                          >
+                            {updateStatus.isPending ? (
+                              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                            ) : null}
+                            {STATUS_LABELS[status]}
+                          </Button>
+                        ))}
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs text-muted-foreground">
+                          Remarks (optional)
+                        </label>
+                        <Input
+                          type="text"
+                          value={statusRemarks}
+                          onChange={(e) => setStatusRemarks(e.target.value)}
+                          placeholder="Add a note..."
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {allowedStatusTransitions.length === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    No status changes available for this order.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+
             {/* Payment */}
             <Card>
               <CardHeader>

@@ -62,25 +62,28 @@ public class UpdateChannelSettingsCommandHandler : IRequestHandler<UpdateChannel
         var autoSyncInventory = request.AutoSyncInventory ?? channel.AutoSyncInventory;
         channel.UpdateSyncSettings(autoSyncOrders, autoSyncInventory);
 
-        // Update advanced sync settings if provided
-        if (request.InitialSyncDays.HasValue || request.InventorySyncDays.HasValue ||
-            request.ProductSyncDays.HasValue || request.OrderSyncLimit.HasValue ||
-            request.InventorySyncLimit.HasValue || request.ProductSyncLimit.HasValue ||
-            request.SyncProductsEnabled.HasValue || request.AutoSyncProducts.HasValue)
-        {
-            var initialSyncDays = request.InitialSyncDays ?? channel.InitialSyncDays;
-            var inventorySyncDays = request.InventorySyncDays ?? channel.InventorySyncDays;
-            var productSyncDays = request.ProductSyncDays ?? channel.ProductSyncDays;
-            var orderSyncLimit = request.OrderSyncLimit ?? channel.OrderSyncLimit;
-            var inventorySyncLimit = request.InventorySyncLimit ?? channel.InventorySyncLimit;
-            var productSyncLimit = request.ProductSyncLimit ?? channel.ProductSyncLimit;
-            var syncProductsEnabled = request.SyncProductsEnabled ?? channel.SyncProductsEnabled;
-            var autoSyncProducts = request.AutoSyncProducts ?? channel.AutoSyncProducts;
-            channel.UpdateAdvancedSyncSettings(
-                initialSyncDays, inventorySyncDays, productSyncDays,
-                orderSyncLimit, inventorySyncLimit, productSyncLimit,
-                syncProductsEnabled, autoSyncProducts);
-        }
+        // Update advanced sync settings
+        // Note: We pass the request values directly to allow setting null (for "All time" / "Unlimited")
+        // The frontend explicitly sends null when user selects "All time" or "Unlimited"
+        var syncProductsEnabled = request.SyncProductsEnabled ?? channel.SyncProductsEnabled;
+        var autoSyncProducts = request.AutoSyncProducts ?? channel.AutoSyncProducts;
+
+        _logger.LogInformation(
+            "Updating channel settings - InitialSyncDays: {InitialSyncDays}, OrderSyncLimit: {OrderSyncLimit}, ProductSyncDays: {ProductSyncDays}, ProductSyncLimit: {ProductSyncLimit}",
+            request.InitialSyncDays?.ToString() ?? "null (all time)",
+            request.OrderSyncLimit?.ToString() ?? "null (unlimited)",
+            request.ProductSyncDays?.ToString() ?? "null (all time)",
+            request.ProductSyncLimit?.ToString() ?? "null (unlimited)");
+
+        channel.UpdateAdvancedSyncSettings(
+            request.InitialSyncDays,
+            request.InventorySyncDays,
+            request.ProductSyncDays,
+            request.OrderSyncLimit,
+            request.InventorySyncLimit,
+            request.ProductSyncLimit,
+            syncProductsEnabled,
+            autoSyncProducts);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 

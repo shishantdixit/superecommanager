@@ -83,6 +83,9 @@ public static class DependencyInjection
         services.AddScoped<IPermissionService, PermissionService>();
         services.AddScoped<IFeatureFlagService, FeatureFlagService>();
         services.AddScoped<IWebhookDispatcher, WebhookDispatcherService>();
+        services.AddScoped<ICourierService, CourierService>();
+        services.AddScoped<ICourierWalletService, CourierWalletService>();
+        services.AddScoped<IShiprocketChannelService, ShiprocketChannelService>();
 
         // Register HttpClient for webhook delivery
         services.AddHttpClient("Webhook", client =>

@@ -17,3 +17,6 @@ export * from './pagination';
 
 // Overlay components
 export * from './modal';
+
+// Search components
+export * from './ProductSearchInput';

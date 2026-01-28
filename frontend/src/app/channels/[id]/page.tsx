@@ -76,16 +76,18 @@ export default function ChannelSettingsPage() {
   const channel = channels?.find(c => c.id === channelId);
 
   // Update local state when channel data loads
+  // Note: We preserve null values for sync days/limits as null means "All time" / "Unlimited"
   useEffect(() => {
     if (channel) {
       setAutoSyncOrders(channel.autoSyncOrders ?? true);
       setAutoSyncInventory(channel.autoSyncInventory ?? false);
-      setInitialSyncDays(channel.initialSyncDays ?? 7);
-      setInventorySyncDays(channel.inventorySyncDays ?? 7);
-      setProductSyncDays(channel.productSyncDays ?? 7);
-      setOrderSyncLimit(channel.orderSyncLimit ?? 100);
-      setInventorySyncLimit(channel.inventorySyncLimit ?? 500);
-      setProductSyncLimit(channel.productSyncLimit ?? 50);
+      // Preserve null values - null means "All time" for days and "Unlimited" for limits
+      setInitialSyncDays(channel.initialSyncDays !== undefined ? channel.initialSyncDays : 7);
+      setInventorySyncDays(channel.inventorySyncDays !== undefined ? channel.inventorySyncDays : 7);
+      setProductSyncDays(channel.productSyncDays !== undefined ? channel.productSyncDays : 7);
+      setOrderSyncLimit(channel.orderSyncLimit !== undefined ? channel.orderSyncLimit : 100);
+      setInventorySyncLimit(channel.inventorySyncLimit !== undefined ? channel.inventorySyncLimit : 500);
+      setProductSyncLimit(channel.productSyncLimit !== undefined ? channel.productSyncLimit : 50);
       setSyncProductsEnabled(channel.syncProductsEnabled ?? false);
       setAutoSyncProducts(channel.autoSyncProducts ?? false);
     }

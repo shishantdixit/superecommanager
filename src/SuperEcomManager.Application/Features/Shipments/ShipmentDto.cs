@@ -108,6 +108,22 @@ public record ShipmentDetailDto
     public DateTime CreatedAt { get; init; }
     public DateTime? UpdatedAt { get; init; }
 
+    /// <summary>
+    /// External order ID from the courier system (e.g., Shiprocket order_id).
+    /// </summary>
+    public string? ExternalOrderId { get; init; }
+
+    /// <summary>
+    /// External shipment ID from the courier system (e.g., Shiprocket shipment_id).
+    /// </summary>
+    public string? ExternalShipmentId { get; init; }
+
+    /// <summary>
+    /// Whether the shipment is ready for courier assignment.
+    /// True when status is Created and ExternalShipmentId is populated.
+    /// </summary>
+    public bool CanAssignCourier => Status == ShipmentStatus.Created && !string.IsNullOrEmpty(ExternalShipmentId);
+
     // Order Info
     public string CustomerName { get; init; } = string.Empty;
     public string? CustomerPhone { get; init; }

@@ -256,8 +256,10 @@ public class ChannelsController : ApiControllerBase
             AutoSyncInventory = request.AutoSyncInventory,
             InitialSyncDays = request.InitialSyncDays,
             InventorySyncDays = request.InventorySyncDays,
+            ProductSyncDays = request.ProductSyncDays,
             OrderSyncLimit = request.OrderSyncLimit,
             InventorySyncLimit = request.InventorySyncLimit,
+            ProductSyncLimit = request.ProductSyncLimit,
             SyncProductsEnabled = request.SyncProductsEnabled,
             AutoSyncProducts = request.AutoSyncProducts
         });

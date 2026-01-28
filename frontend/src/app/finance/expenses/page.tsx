@@ -66,13 +66,13 @@ const categoryOptions = [
 
 const expenseSchema = z.object({
   category: z.string().min(1, 'Category is required'),
-  amount: z.coerce.number().min(0.01, 'Amount must be greater than 0'),
+  amount: z.number().min(0.01, 'Amount must be greater than 0'),
   description: z.string().min(1, 'Description is required'),
   expenseDate: z.string().min(1, 'Date is required'),
   vendor: z.string().optional(),
   invoiceNumber: z.string().optional(),
   notes: z.string().optional(),
-  isRecurring: z.boolean().default(false),
+  isRecurring: z.boolean(),
 });
 
 type ExpenseFormData = z.infer<typeof expenseSchema>;
@@ -399,7 +399,7 @@ export default function ExpensesPage() {
               type="number"
               step="0.01"
               min="0"
-              {...register('amount')}
+              {...register('amount', { valueAsNumber: true })}
               placeholder="0.00"
             />
             {errors.amount && (

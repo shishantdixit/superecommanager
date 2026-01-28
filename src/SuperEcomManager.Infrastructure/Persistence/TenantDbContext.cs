@@ -27,6 +27,11 @@ public class TenantDbContext : DbContext, ITenantDbContext
     private readonly AuditableEntityInterceptor _auditableEntityInterceptor;
     private readonly SoftDeleteInterceptor _softDeleteInterceptor;
 
+    /// <summary>
+    /// Gets the current tenant's schema name. Used by TenantModelCacheKeyFactory.
+    /// </summary>
+    public string CurrentSchemaName => _currentTenantService.SchemaName;
+
     public TenantDbContext(
         DbContextOptions<TenantDbContext> options,
         ICurrentTenantService currentTenantService,

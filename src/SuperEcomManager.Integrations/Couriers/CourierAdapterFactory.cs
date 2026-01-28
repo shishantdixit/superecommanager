@@ -29,12 +29,12 @@ public interface ICourierAdapterFactory
 /// </summary>
 public class CourierAdapterFactory : ICourierAdapterFactory
 {
-    private readonly IServiceProvider _serviceProvider;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly Dictionary<CourierType, Type> _adapterTypes = new();
 
-    public CourierAdapterFactory(IServiceProvider serviceProvider)
+    public CourierAdapterFactory(IServiceScopeFactory scopeFactory)
     {
-        _serviceProvider = serviceProvider;
+        _scopeFactory = scopeFactory;
     }
 
     /// <summary>
@@ -50,14 +50,16 @@ public class CourierAdapterFactory : ICourierAdapterFactory
         if (!_adapterTypes.TryGetValue(courierType, out var adapterType))
             return null;
 
-        return (ICourierAdapter?)_serviceProvider.GetService(adapterType);
+        using var scope = _scopeFactory.CreateScope();
+        return (ICourierAdapter?)scope.ServiceProvider.GetService(adapterType);
     }
 
     public IEnumerable<ICourierAdapter> GetAllAdapters()
     {
+        using var scope = _scopeFactory.CreateScope();
         foreach (var adapterType in _adapterTypes.Values)
         {
-            var adapter = (ICourierAdapter?)_serviceProvider.GetService(adapterType);
+            var adapter = (ICourierAdapter?)scope.ServiceProvider.GetService(adapterType);
             if (adapter != null)
                 yield return adapter;
         }
@@ -100,7 +102,8 @@ public class CourierAdapterBuilder
     {
         _services.AddSingleton<ICourierAdapterFactory>(sp =>
         {
-            var factory = new CourierAdapterFactory(sp);
+            var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
+            var factory = new CourierAdapterFactory(scopeFactory);
             foreach (var (type, adapterType) in _registrations)
             {
                 var method = typeof(CourierAdapterFactory)

@@ -30,7 +30,9 @@ public class ShiprocketAdapter : ICourierAdapter
     {
         try
         {
-            // Shiprocket uses email/password for authentication
+            // Shiprocket uses email/password for authentication.
+            // These must be API user credentials (Settings → API → API Users),
+            // not regular account credentials which trigger OTP authentication.
             var email = credentials.ApiKey; // We store email in ApiKey field
             var password = credentials.ApiSecret; // We store password in ApiSecret field
 
@@ -114,24 +116,44 @@ public class ShiprocketAdapter : ICourierAdapter
     {
         try
         {
+            _logger.LogInformation("=== SHIPROCKET CREATE SHIPMENT STARTED ===");
+            _logger.LogInformation("Order Number: {OrderNumber}, COD: {IsCOD}, Weight: {Weight}kg",
+                request.OrderNumber, request.IsCOD, request.Weight);
+
             var token = await GetTokenAsync(credentials, cancellationToken);
             if (string.IsNullOrEmpty(token))
             {
+                _logger.LogError("Shiprocket authentication failed - no token received");
                 return CourierResult<ShipmentResponse>.Failure("Authentication failed");
             }
 
+            _logger.LogInformation("Shiprocket authentication successful, token received");
+
             // Get pickup location from settings
             var pickupLocation = "Primary";
-            if (credentials.AdditionalSettings.TryGetValue("pickup_location", out var pl))
+            if (credentials.AdditionalSettings.TryGetValue("pickupLocation", out var pl))
             {
                 pickupLocation = pl;
             }
 
+            // Resolve channel ID: primary from credentials, fallback from additional settings
             int? channelId = null;
-            if (credentials.AdditionalSettings.TryGetValue("channel_id", out var chId) && int.TryParse(chId, out var cid))
+            if (!string.IsNullOrEmpty(credentials.ChannelId) && int.TryParse(credentials.ChannelId, out var credChId))
+            {
+                channelId = credChId;
+            }
+            else if (credentials.AdditionalSettings.TryGetValue("channelId", out var chId) && int.TryParse(chId, out var cid))
             {
                 channelId = cid;
             }
+
+            _logger.LogInformation("Pickup Location: {PickupLocation}, Channel ID: {ChannelId}",
+                pickupLocation, channelId?.ToString() ?? "None");
+
+            // Split customer name into first and last name for Shiprocket validation
+            var nameParts = request.DeliveryName.Trim().Split(' ', 2);
+            var firstName = nameParts[0];
+            var lastName = nameParts.Length > 1 ? nameParts[1] : "";
 
             // Create order in Shiprocket
             var orderRequest = new ShiprocketCreateOrderRequest
@@ -140,14 +162,15 @@ public class ShiprocketAdapter : ICourierAdapter
                 OrderDate = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm"),
                 PickupLocation = pickupLocation,
                 ChannelId = channelId,
-                BillingCustomerName = request.DeliveryName,
+                BillingCustomerName = firstName,
+                BillingLastName = lastName,
                 BillingAddress = request.DeliveryAddress,
                 BillingCity = request.DeliveryCity,
                 BillingState = request.DeliveryState,
                 BillingPincode = request.DeliveryPincode,
                 BillingPhone = request.DeliveryPhone,
                 BillingCountry = "India",
-                ShippingIsBilling = true,
+                ShippingIsBilling = 1, // 1 = billing address same as shipping
                 PaymentMethod = request.IsCOD ? "COD" : "Prepaid",
                 SubTotal = request.DeclaredValue,
                 Weight = request.Weight,
@@ -161,32 +184,86 @@ public class ShiprocketAdapter : ICourierAdapter
                     Units = i.Quantity,
                     SellingPrice = i.UnitPrice,
                     Discount = 0,
-                    Tax = 0
+                    Tax = 0,
+                    Hsn = "0" // Default HSN code for general goods (required by Shiprocket)
                 }).ToList()
             };
 
-            var orderResponse = await _client.CreateOrderAsync(token, orderRequest, cancellationToken);
+            // Use channel-specific endpoint if channel_id is set, otherwise adhoc
+            ShiprocketCreateOrderResponse? orderResponse;
+            if (channelId.HasValue)
+            {
+                _logger.LogInformation("Calling Shiprocket CreateOrder API (channel-specific, channel_id={ChannelId})...", channelId.Value);
+                orderResponse = await _client.CreateChannelOrderAsync(token, orderRequest, cancellationToken);
+            }
+            else
+            {
+                _logger.LogInformation("Calling Shiprocket CreateOrder API (adhoc/custom)...");
+                orderResponse = await _client.CreateOrderAsync(token, orderRequest, cancellationToken);
+            }
 
             if (orderResponse == null || orderResponse.OrderId == 0)
             {
-                return CourierResult<ShipmentResponse>.Failure("Failed to create order in Shiprocket");
+                // Build comprehensive error message
+                string errorMessage = "Failed to create order in Shiprocket";
+
+                if (orderResponse != null)
+                {
+                    // Check for structured error response
+                    if (!string.IsNullOrEmpty(orderResponse.Message))
+                    {
+                        errorMessage = orderResponse.Message;
+
+                        // Append detailed validation errors if present
+                        if (orderResponse.Errors != null && orderResponse.Errors.Any())
+                        {
+                            var errorDetails = string.Join("; ", orderResponse.Errors
+                                .SelectMany(e => e.Value.Select(v => $"{e.Key}: {v}")));
+                            errorMessage += $" - {errorDetails}";
+                        }
+                    }
+                    // Fallback to Status field
+                    else if (!string.IsNullOrEmpty(orderResponse.Status))
+                    {
+                        errorMessage = orderResponse.Status;
+                    }
+
+                    _logger.LogError("Shiprocket CreateOrder API failed. StatusCode: {StatusCode}, Message: {Message}, Errors: {@Errors}",
+                        orderResponse.StatusCode, orderResponse.Message, orderResponse.Errors);
+                }
+                else
+                {
+                    _logger.LogError("Shiprocket CreateOrder API returned null response");
+                }
+
+                return CourierResult<ShipmentResponse>.Failure(errorMessage);
             }
+
+            _logger.LogInformation("Shiprocket order created successfully. OrderId: {OrderId}, ShipmentId: {ShipmentId}, AWB: {AwbCode}",
+                orderResponse.OrderId, orderResponse.ShipmentId, orderResponse.AwbCode ?? "Not assigned yet");
 
             // If shipment was auto-created and AWB assigned
             if (!string.IsNullOrEmpty(orderResponse.AwbCode))
             {
+                _logger.LogInformation("AWB auto-assigned: {AwbCode}, Courier: {CourierName}",
+                    orderResponse.AwbCode, orderResponse.CourierName);
                 return CourierResult<ShipmentResponse>.Success(new ShipmentResponse
                 {
                     AwbNumber = orderResponse.AwbCode,
                     CourierName = orderResponse.CourierName,
                     ShipmentId = orderResponse.ShipmentId?.ToString(),
-                    TrackingUrl = $"https://shiprocket.co/tracking/{orderResponse.AwbCode}"
+                    TrackingUrl = $"https://shiprocket.co/tracking/{orderResponse.AwbCode}",
+                    ExternalOrderId = orderResponse.OrderId.ToString(),
+                    ExternalShipmentId = orderResponse.ShipmentId?.ToString()
                 });
             }
 
             // Generate AWB if not auto-assigned
             if (orderResponse.ShipmentId.HasValue)
             {
+                _logger.LogInformation("AWB not auto-assigned, calling GenerateAwb API for ShipmentId: {ShipmentId}...",
+                    orderResponse.ShipmentId.Value);
+
                 var awbRequest = new ShiprocketGenerateAwbRequest
                 {
                     ShipmentId = orderResponse.ShipmentId.Value
@@ -196,24 +273,80 @@ public class ShiprocketAdapter : ICourierAdapter
                 if (!string.IsNullOrEmpty(request.ServiceCode) && int.TryParse(request.ServiceCode, out var courierId))
                 {
                     awbRequest.CourierId = courierId;
+                    _logger.LogInformation("Using specific courier ID: {CourierId}", courierId);
+                }
+                else
+                {
+                    _logger.LogInformation("No courier ID specified - Shiprocket will auto-select based on serviceability");
                 }
 
+                _logger.LogInformation("Calling Shiprocket AWB generation API with request: {@AwbRequest}", awbRequest);
+
                 var awbResponse = await _client.GenerateAwbAsync(token, awbRequest, cancellationToken);
+
+                _logger.LogInformation("AWB generation API response: {@AwbResponse}", awbResponse);
 
                 if (awbResponse?.Response?.Data != null)
                 {
                     var awbData = awbResponse.Response.Data;
+                    _logger.LogInformation("AWB generated successfully: {AwbCode}, Courier: {CourierName}, CourierId: {CourierId}",
+                        awbData.AwbCode, awbData.CourierName, awbData.CourierCompanyId);
+
                     return CourierResult<ShipmentResponse>.Success(new ShipmentResponse
                     {
                         AwbNumber = awbData.AwbCode,
                         CourierName = awbData.CourierName,
                         ShipmentId = awbData.ShipmentId.ToString(),
-                        TrackingUrl = $"https://shiprocket.co/tracking/{awbData.AwbCode}"
+                        TrackingUrl = $"https://shiprocket.co/tracking/{awbData.AwbCode}",
+                        LabelUrl = null, // Label must be generated separately via /courier/generate/label
+                        ExternalOrderId = orderResponse.OrderId.ToString(),
+                        ExternalShipmentId = orderResponse.ShipmentId?.ToString()
+                    });
+                }
+                else
+                {
+                    string errorMessage = "Failed to assign courier";
+
+                    if (awbResponse != null)
+                    {
+                        errorMessage += $". AWB Assign Status: {awbResponse.AwbAssignStatus}";
+
+                        if (awbResponse.AwbAssignStatus == 0)
+                        {
+                            errorMessage += ". Possible reasons: No serviceable courier found for this route, or insufficient wallet balance.";
+                        }
+                    }
+
+                    _logger.LogWarning("AWB assignment failed but order was created. Returning partial success. Error: {ErrorMessage}. Full Response: {@Response}",
+                        errorMessage, awbResponse);
+
+                    // Return partial success - order was created, AWB assignment failed
+                    // This allows the shipment to be saved and courier assigned later
+                    return CourierResult<ShipmentResponse>.Success(new ShipmentResponse
+                    {
+                        AwbNumber = string.Empty,
+                        ExternalOrderId = orderResponse.OrderId.ToString(),
+                        ExternalShipmentId = orderResponse.ShipmentId?.ToString(),
+                        IsPartialSuccess = true,
+                        AwbError = errorMessage
                     });
                 }
             }
+            else
+            {
+                // Order was created but no shipment ID returned - rare edge case
+                _logger.LogWarning("No shipment ID in order response - returning partial success with order ID only. OrderResponse: {@OrderResponse}",
+                    orderResponse);
 
-            return CourierResult<ShipmentResponse>.Failure("Failed to generate AWB");
+                return CourierResult<ShipmentResponse>.Success(new ShipmentResponse
+                {
+                    AwbNumber = string.Empty,
+                    ExternalOrderId = orderResponse.OrderId.ToString(),
+                    ExternalShipmentId = null,
+                    IsPartialSuccess = true,
+                    AwbError = "Order created but no shipment ID was returned. Please check the order in Shiprocket dashboard."
+                });
+            }
         }
         catch (Exception ex)
         {

@@ -36,6 +36,23 @@ export interface TrackingResponse {
   events: TrackingEvent[];
 }
 
+export interface AvailableCourier {
+  courierId: number;
+  courierName: string;
+  freightCharge: number;
+  codCharges: number;
+  totalCharge: number;
+  estimatedDeliveryDays: string;
+  etd?: string;
+  rating: number;
+  isSurface: boolean;
+  isRecommended: boolean;
+}
+
+export interface AssignCourierRequest {
+  courierId?: number;
+}
+
 /**
  * Transform frontend pagination params to backend format.
  */
@@ -122,6 +139,22 @@ export const shipmentsService = {
     locationIds?: string[];
   }) => {
     const response = await post<ApiResponse<PaginatedResponse<Shipment>>, typeof filters>('/shipments/filter', filters);
+    return response.data;
+  },
+
+  /**
+   * Get available couriers for a shipment (serviceability check).
+   */
+  getAvailableCouriers: async (shipmentId: string) => {
+    const response = await get<ApiResponse<AvailableCourier[]>>(`/shipments/${shipmentId}/available-couriers`);
+    return response.data;
+  },
+
+  /**
+   * Assign a courier to a shipment.
+   */
+  assignCourier: async (shipmentId: string, courierId?: number) => {
+    const response = await post<ApiResponse<Shipment>, AssignCourierRequest>(`/shipments/${shipmentId}/assign-courier`, { courierId });
     return response.data;
   },
 };

@@ -20,6 +20,7 @@ import {
   ChevronRight,
   Menu,
   X,
+  Plug,
 } from 'lucide-react';
 
 interface NavItem {
@@ -90,9 +91,19 @@ const navItems: NavItem[] = [
     icon: Bell,
   },
   {
+    label: 'Integrations',
+    href: '/integrations',
+    icon: Plug,
+    permission: 'settings.manage',
+  },
+  {
     label: 'Settings',
     href: '/settings',
     icon: Settings,
+    children: [
+      { label: 'General', href: '/settings', icon: Settings },
+      { label: 'Integrations', href: '/settings/integrations', icon: Plug },
+    ],
   },
 ];
 

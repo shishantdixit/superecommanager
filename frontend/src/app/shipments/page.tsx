@@ -201,7 +201,7 @@ export default function ShipmentsPage() {
                           <div>
                             <p className="font-medium">{shipment.orderNumber}</p>
                             <p className="text-xs text-muted-foreground">
-                              {shipment.shippingCost > 0 ? `Weight: ${shipment.weight}kg` : ''}
+                              {(shipment.shippingCost ?? 0) > 0 ? `Weight: ${shipment.weight}kg` : ''}
                             </p>
                           </div>
                         </TableCell>
@@ -224,7 +224,7 @@ export default function ShipmentsPage() {
                           </div>
                         </TableCell>
                         <TableCell className="text-right font-medium">
-                          {formatCurrency(shipment.shippingCost)}
+                          {formatCurrency(shipment.shippingCost ?? 0)}
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">

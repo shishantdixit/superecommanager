@@ -77,6 +77,9 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
             .HasColumnName("channel_product_id")
             .HasMaxLength(100);
 
+        builder.Property(p => p.SourceChannelId)
+            .HasColumnName("source_channel_id");
+
         builder.OwnsOne(p => p.ChannelSellingPrice, money =>
         {
             money.Property(m => m.Amount)
@@ -89,6 +92,7 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
 
         builder.HasIndex(p => p.SyncStatus);
         builder.HasIndex(p => p.ChannelProductId);
+        builder.HasIndex(p => p.SourceChannelId);
 
         builder.HasMany(p => p.Variants)
             .WithOne(v => v.Product)

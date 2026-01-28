@@ -5,6 +5,7 @@ using SuperEcomManager.Application.Common.Attributes;
 using SuperEcomManager.Application.Common.Interfaces;
 using SuperEcomManager.Application.Common.Models;
 using SuperEcomManager.Domain.Enums;
+using SuperEcomManager.Domain.Entities.Orders;
 
 namespace SuperEcomManager.Application.Features.Orders;
 
@@ -24,15 +25,18 @@ public class UpdateOrderStatusCommandHandler : IRequestHandler<UpdateOrderStatus
 {
     private readonly ITenantDbContext _dbContext;
     private readonly ICurrentUserService _currentUserService;
+    private readonly ICurrentTenantService _currentTenantService;
     private readonly ILogger<UpdateOrderStatusCommandHandler> _logger;
 
     public UpdateOrderStatusCommandHandler(
         ITenantDbContext dbContext,
         ICurrentUserService currentUserService,
+        ICurrentTenantService currentTenantService,
         ILogger<UpdateOrderStatusCommandHandler> logger)
     {
         _dbContext = dbContext;
         _currentUserService = currentUserService;
+        _currentTenantService = currentTenantService;
         _logger = logger;
     }
 
@@ -40,54 +44,129 @@ public class UpdateOrderStatusCommandHandler : IRequestHandler<UpdateOrderStatus
         UpdateOrderStatusCommand request,
         CancellationToken cancellationToken)
     {
-        var order = await _dbContext.Orders
-            .Include(o => o.Channel)
-            .Include(o => o.Items)
-            .Include(o => o.StatusHistory)
-            .FirstOrDefaultAsync(o => o.Id == request.OrderId && o.DeletedAt == null, cancellationToken);
+        // Use execution strategy to support retry policy
+        var strategy = _dbContext.Database.CreateExecutionStrategy();
 
-        if (order == null)
+        return await strategy.ExecuteAsync(async () =>
         {
-            return Result<OrderDetailDto>.Failure("Order not found");
-        }
+            const int maxRetries = 5;
+            int attemptCount = 0;
+            var random = new Random();
 
-        var oldStatus = order.Status;
-
-        try
-        {
-            order.UpdateStatus(request.NewStatus, _currentUserService.UserId, request.Reason);
-            await _dbContext.SaveChangesAsync(cancellationToken);
-
-            _logger.LogInformation(
-                "Order {OrderId} status changed from {OldStatus} to {NewStatus} by {UserId}",
-                order.Id, oldStatus, request.NewStatus, _currentUserService.UserId);
-
-            // Get shipment if exists
-            var shipment = await _dbContext.Shipments
-                .AsNoTracking()
-                .Where(s => s.OrderId == order.Id && s.DeletedAt == null)
-                .Select(s => new ShipmentSummaryDto
+            while (attemptCount < maxRetries)
+            {
+                try
                 {
-                    Id = s.Id,
-                    AwbNumber = s.AwbNumber,
-                    CourierName = s.CourierName ?? s.CourierType.ToString(),
-                    CourierType = s.CourierType,
-                    Status = s.Status,
-                    TrackingUrl = s.TrackingUrl,
-                    ExpectedDeliveryDate = s.ExpectedDeliveryDate
-                })
-                .FirstOrDefaultAsync(cancellationToken);
+                    attemptCount++;
 
-            var dto = MapToDetailDto(order, shipment);
-            return Result<OrderDetailDto>.Success(dto);
-        }
-        catch (InvalidOperationException ex)
-        {
-            _logger.LogWarning(
-                "Invalid status transition for order {OrderId}: {Message}",
-                order.Id, ex.Message);
-            return Result<OrderDetailDto>.Failure(ex.Message);
-        }
+                    // Clear change tracker before loading to ensure fresh data
+                    foreach (var entry in _dbContext.ChangeTracker.Entries().ToList())
+                    {
+                        entry.State = EntityState.Detached;
+                    }
+
+                    // First, verify the order exists
+                    var orderExists = await _dbContext.Orders
+                        .AsNoTracking()
+                        .Where(o => o.Id == request.OrderId && o.DeletedAt == null)
+                        .Select(o => new { o.Id, o.Status })
+                        .FirstOrDefaultAsync(cancellationToken);
+
+                    if (orderExists == null)
+                    {
+                        return Result<OrderDetailDto>.Failure("Order not found");
+                    }
+
+                    var oldStatus = orderExists.Status;
+
+                    // Use ExecuteUpdateAsync to bypass change tracking
+                    var utcNow = DateTime.UtcNow;
+                    var userId = _currentUserService.UserId;
+
+                    var rowsAffected = await _dbContext.Orders
+                        .Where(o => o.Id == request.OrderId && o.DeletedAt == null)
+                        .ExecuteUpdateAsync(setters => setters
+                            .SetProperty(o => o.Status, request.NewStatus)
+                            .SetProperty(o => o.UpdatedAt, utcNow)
+                            .SetProperty(o => o.UpdatedBy, userId)
+                            .SetProperty(o => o.ShippedAt, o => request.NewStatus == OrderStatus.Shipped ? (DateTime?)utcNow : o.ShippedAt)
+                            .SetProperty(o => o.DeliveredAt, o => request.NewStatus == OrderStatus.Delivered ? (DateTime?)utcNow : o.DeliveredAt)
+                            .SetProperty(o => o.CancelledAt, o => request.NewStatus == OrderStatus.Cancelled ? (DateTime?)utcNow : o.CancelledAt)
+                            .SetProperty(o => o.FulfillmentStatus, o => request.NewStatus == OrderStatus.Shipped ? FulfillmentStatus.Fulfilled : o.FulfillmentStatus),
+                        cancellationToken);
+
+                    if (rowsAffected == 0)
+                    {
+                        _logger.LogWarning("Order {OrderId} was not updated - possibly deleted", request.OrderId);
+                        continue; // Retry
+                    }
+
+                    // Add status history record using traditional Add (this should work fine as it's a new record)
+                    var statusHistory = new OrderStatusHistory(request.OrderId, request.NewStatus, userId, request.Reason);
+                    _dbContext.OrderStatusHistory.Add(statusHistory);
+                    await _dbContext.SaveChangesAsync(cancellationToken);
+
+                    _logger.LogInformation(
+                        "Order {OrderId} status changed from {OldStatus} to {NewStatus} by {UserId} (attempt {Attempt})",
+                        request.OrderId, oldStatus, request.NewStatus, _currentUserService.UserId, attemptCount);
+
+                    // Reload the order with all navigation properties for the DTO
+                    var completeOrder = await _dbContext.Orders
+                        .AsNoTracking()
+                        .Include(o => o.Channel)
+                        .Include(o => o.Items)
+                        .Include(o => o.StatusHistory)
+                        .FirstAsync(o => o.Id == request.OrderId, cancellationToken);
+
+                    // Get shipment if exists
+                    var shipment = await _dbContext.Shipments
+                        .AsNoTracking()
+                        .Where(s => s.OrderId == request.OrderId && s.DeletedAt == null)
+                        .Select(s => new ShipmentSummaryDto
+                        {
+                            Id = s.Id,
+                            AwbNumber = s.AwbNumber,
+                            CourierName = s.CourierName ?? s.CourierType.ToString(),
+                            CourierType = s.CourierType,
+                            Status = s.Status,
+                            TrackingUrl = s.TrackingUrl,
+                            ExpectedDeliveryDate = s.ExpectedDeliveryDate
+                        })
+                        .FirstOrDefaultAsync(cancellationToken);
+
+                    var dto = MapToDetailDto(completeOrder, shipment);
+                    return Result<OrderDetailDto>.Success(dto);
+                }
+                catch (DbUpdateConcurrencyException) when (attemptCount < maxRetries)
+                {
+                    _logger.LogWarning(
+                        "Concurrency conflict updating order {OrderId} (attempt {Attempt}/{MaxRetries}). Retrying...",
+                        request.OrderId, attemptCount, maxRetries);
+
+                    // Exponential backoff with jitter to avoid thundering herd
+                    var baseDelay = Math.Pow(2, attemptCount) * 100; // 200ms, 400ms, 800ms, 1600ms
+                    var jitter = random.Next(0, 100); // Random 0-100ms
+                    await Task.Delay(TimeSpan.FromMilliseconds(baseDelay + jitter), cancellationToken);
+                }
+                catch (DbUpdateConcurrencyException ex) when (attemptCount >= maxRetries)
+                {
+                    _logger.LogError(ex,
+                        "Failed to update order {OrderId} after {MaxRetries} attempts due to concurrency conflict",
+                        request.OrderId, maxRetries);
+                    return Result<OrderDetailDto>.Failure("Unable to update order status due to concurrent modifications. Please try again.");
+                }
+                catch (InvalidOperationException ex)
+                {
+                    _logger.LogWarning(
+                        "Invalid status transition for order {OrderId}: {Message}",
+                        request.OrderId, ex.Message);
+                    return Result<OrderDetailDto>.Failure(ex.Message);
+                }
+            }
+
+            // This should never be reached, but added for completeness
+            return Result<OrderDetailDto>.Failure("Unable to update order status. Please try again.");
+        });
     }
 
     private static OrderDetailDto MapToDetailDto(Domain.Entities.Orders.Order order, ShipmentSummaryDto? shipment)

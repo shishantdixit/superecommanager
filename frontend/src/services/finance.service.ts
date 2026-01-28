@@ -95,10 +95,10 @@ export interface RevenueStats {
   cancelledOrderCount: number;
   rtoOrderCount: number;
   revenueByChannel: Record<string, number>;
-  dailyRevenue: DailyRevenue[];
+  dailyRevenue: FinanceDailyRevenue[];
 }
 
-export interface DailyRevenue {
+export interface FinanceDailyRevenue {
   date: string;
   revenue: number;
   orderCount: number;

@@ -16,6 +16,7 @@ public class CourierAccountDto
     public bool IsConnected { get; set; }
     public DateTime? LastConnectedAt { get; set; }
     public string? LastError { get; set; }
+    public string? ApiUserEmail { get; set; }
     public int Priority { get; set; }
     public bool SupportsCOD { get; set; }
     public bool SupportsReverse { get; set; }

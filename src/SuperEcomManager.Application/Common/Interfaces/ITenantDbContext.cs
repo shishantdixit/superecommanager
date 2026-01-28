@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using SuperEcomManager.Domain.Entities.Audit;
 using SuperEcomManager.Domain.Entities.Channels;
@@ -78,4 +79,9 @@ public interface ITenantDbContext
     /// Provides access to database-related information and operations.
     /// </summary>
     DatabaseFacade Database { get; }
+
+    /// <summary>
+    /// Provides access to change tracking information and operations.
+    /// </summary>
+    ChangeTracker ChangeTracker { get; }
 }

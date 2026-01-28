@@ -211,6 +211,26 @@ public class ShipmentResponse
     public string? TrackingUrl { get; set; }
     public decimal? FreightCharge { get; set; }
     public DateTime? ExpectedDelivery { get; set; }
+
+    /// <summary>
+    /// External order ID from the courier system (e.g., Shiprocket order_id).
+    /// </summary>
+    public string? ExternalOrderId { get; set; }
+
+    /// <summary>
+    /// External shipment ID from the courier system (e.g., Shiprocket shipment_id).
+    /// </summary>
+    public string? ExternalShipmentId { get; set; }
+
+    /// <summary>
+    /// Indicates partial success - order was created in courier system but AWB assignment failed.
+    /// </summary>
+    public bool IsPartialSuccess { get; set; }
+
+    /// <summary>
+    /// Error message for AWB assignment failure (only set when IsPartialSuccess is true).
+    /// </summary>
+    public string? AwbError { get; set; }
 }
 
 /// <summary>

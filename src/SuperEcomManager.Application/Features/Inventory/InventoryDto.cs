@@ -147,6 +147,10 @@ public record ProductFilterDto
     public decimal? MinPrice { get; init; }
     public decimal? MaxPrice { get; init; }
     public SyncStatus? SyncStatus { get; init; }
+    /// <summary>
+    /// Filter products by source channel. If null, returns all products.
+    /// </summary>
+    public Guid? ChannelId { get; init; }
 }
 
 /// <summary>

@@ -155,6 +155,8 @@ export interface ProductFilters {
   minPrice?: number;
   maxPrice?: number;
   syncStatus?: SyncStatus;
+  /** Filter products by source channel. If undefined, returns all products. */
+  channelId?: string;
   page?: number;
   pageSize?: number;
   sortBy?: 'Name' | 'Sku' | 'Price' | 'Stock' | 'CreatedAt';

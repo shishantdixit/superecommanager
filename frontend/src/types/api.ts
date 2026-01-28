@@ -143,7 +143,15 @@ export type OrderStatus =
   | 'Returned'
   | 'RTO';
 
-export type PaymentStatus = 'Pending' | 'Paid' | 'Failed' | 'Refunded' | 'COD';
+export type PaymentStatus =
+  | 'Pending'
+  | 'Paid'
+  | 'PartiallyPaid'
+  | 'Failed'
+  | 'Refunded'
+  | 'PartiallyRefunded'
+  | 'CODPending'
+  | 'CODCollected';
 
 /**
  * Shipment types.
@@ -152,19 +160,23 @@ export interface Shipment {
   id: string;
   orderId: string;
   orderNumber: string;
-  awbNumber: string;
-  courierCode: string;
-  courierName: string;
+  shipmentNumber?: string;
+  awbNumber?: string;
+  courierCode?: string;
+  courierName?: string;
   status: ShipmentStatus;
   estimatedDeliveryDate?: string;
   actualDeliveryDate?: string;
-  weight: number;
+  weight?: number;
   dimensions?: Dimensions;
-  shippingCost: number;
+  shippingCost?: number;
   trackingUrl?: string;
-  trackingHistory: TrackingEvent[];
+  trackingHistory?: TrackingEvent[];
   createdAt: string;
-  updatedAt: string;
+  updatedAt?: string;
+  externalOrderId?: string;
+  externalShipmentId?: string;
+  canAssignCourier?: boolean;
 }
 
 export interface Dimensions {
@@ -343,14 +355,19 @@ export interface PaginationParams {
   pageSize?: number;
 }
 
+export type OrderSortBy = 'OrderDate' | 'CreatedAt' | 'TotalAmount' | 'CustomerName' | 'Status';
+
 export interface OrderFilters extends PaginationParams {
   status?: OrderStatus;
   channelId?: string;
   channelType?: string;
   paymentStatus?: PaymentStatus;
+  isCOD?: boolean;
   fromDate?: string;
   toDate?: string;
   search?: string;
+  sortBy?: OrderSortBy;
+  sortDescending?: boolean;
 }
 
 export interface ShipmentFilters extends PaginationParams {

@@ -10,6 +10,7 @@ namespace SuperEcomManager.Application.Features.Couriers;
 public record GetCourierAccountsQuery : IRequest<List<CourierAccountDto>>, ITenantRequest
 {
     public bool? IsActive { get; init; }
+    public bool? IsConnected { get; init; }
 }
 
 public class GetCourierAccountsQueryHandler : IRequestHandler<GetCourierAccountsQuery, List<CourierAccountDto>>
@@ -32,6 +33,11 @@ public class GetCourierAccountsQueryHandler : IRequestHandler<GetCourierAccounts
             query = query.Where(c => c.IsActive == request.IsActive.Value);
         }
 
+        if (request.IsConnected.HasValue)
+        {
+            query = query.Where(c => c.IsConnected == request.IsConnected.Value);
+        }
+
         return await query
             .OrderBy(c => c.Priority)
             .ThenBy(c => c.Name)
@@ -45,6 +51,7 @@ public class GetCourierAccountsQueryHandler : IRequestHandler<GetCourierAccounts
                 IsConnected = c.IsConnected,
                 LastConnectedAt = c.LastConnectedAt,
                 LastError = c.LastError,
+                ApiUserEmail = c.ApiKey,
                 Priority = c.Priority,
                 SupportsCOD = c.SupportsCOD,
                 SupportsReverse = c.SupportsReverse,

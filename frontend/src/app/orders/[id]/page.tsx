@@ -14,7 +14,9 @@ import {
   SectionLoader,
 } from '@/components/ui';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
-import { useOrder, useUpdateOrderStatus, useCancelOrder, useDeleteOrder } from '@/hooks';
+import { useOrder, useUpdateOrderStatus, useCancelOrder, useDeleteOrder, useShipmentsByOrder } from '@/hooks';
+import { CreateShipmentModal } from '@/components/orders/CreateShipmentModal';
+import { AssignCourierModal } from '@/components/orders/AssignCourierModal';
 import {
   ArrowLeft,
   Package,
@@ -32,12 +34,37 @@ import {
   X,
   Loader2,
   AlertTriangle,
+  Link2,
 } from 'lucide-react';
 
 // Statuses that can be edited
 const EDITABLE_STATUSES = ['Pending', 'Confirmed', 'Processing'];
 // Statuses that can be deleted
 const DELETABLE_STATUSES = ['Pending', 'Cancelled'];
+
+// Define allowed status transitions
+const STATUS_TRANSITIONS: Record<string, string[]> = {
+  Pending: ['Confirmed', 'Cancelled'],
+  Confirmed: ['Processing', 'Cancelled'],
+  Processing: ['Shipped', 'Cancelled'],
+  Shipped: ['Delivered', 'RTO'],
+  Delivered: ['Returned'],
+  Cancelled: [],
+  Returned: [],
+  RTO: [],
+};
+
+// Status labels for display
+const STATUS_LABELS: Record<string, string> = {
+  Pending: 'Pending',
+  Confirmed: 'Confirmed',
+  Processing: 'Processing',
+  Shipped: 'Shipped',
+  Delivered: 'Delivered',
+  Cancelled: 'Cancelled',
+  Returned: 'Returned',
+  RTO: 'RTO (Return to Origin)',
+};
 
 // Helper to extract amount from number or MoneyDto
 const getAmount = (value: number | { amount: number } | undefined): number => {
@@ -58,6 +85,14 @@ export default function OrderDetailPage({ params }: PageProps) {
   const cancelOrder = useCancelOrder();
   const deleteOrder = useDeleteOrder();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showStatusDropdown, setShowStatusDropdown] = useState(false);
+  const [statusRemarks, setStatusRemarks] = useState('');
+  const [showCreateShipmentModal, setShowCreateShipmentModal] = useState(false);
+  const [showAssignCourierModal, setShowAssignCourierModal] = useState(false);
+  const [selectedShipmentForCourier, setSelectedShipmentForCourier] = useState<{ id: string; number: string } | null>(null);
+
+  // Fetch shipments for this order
+  const { data: shipments, isLoading: shipmentsLoading } = useShipmentsByOrder(orderId);
 
   // Determine if order can be edited/deleted
   const canEdit = order && EDITABLE_STATUSES.includes(order.status);
@@ -109,6 +144,25 @@ export default function OrderDetailPage({ params }: PageProps) {
     }
   };
 
+  const handleStatusChange = async (newStatus: string) => {
+    try {
+      await updateStatus.mutateAsync({
+        id: orderId,
+        data: {
+          status: newStatus as import('@/types/api').OrderStatus,
+          remarks: statusRemarks || undefined,
+        },
+      });
+      setShowStatusDropdown(false);
+      setStatusRemarks('');
+    } catch (err) {
+      console.error('Failed to update order status:', err);
+    }
+  };
+
+  // Get allowed next statuses for the current order
+  const allowedStatusTransitions = order ? STATUS_TRANSITIONS[order.status] || [] : [];
+
   return (
     <DashboardLayout title={`Order ${order.orderNumber}`}>
       {/* Header */}
@@ -134,11 +188,36 @@ export default function OrderDetailPage({ params }: PageProps) {
               </Button>
             </Link>
           )}
-          {order.status === 'Confirmed' && (
-            <Button variant="primary">
-              <Truck className="mr-2 h-4 w-4" />
-              Create Shipment
-            </Button>
+          {/* Show Create Shipment button if order is ready for shipping */}
+          {(order.status === 'Confirmed' || order.status === 'Processing') && (
+            <>
+              {shipmentsLoading ? (
+                <Button variant="primary" disabled>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Loading...
+                </Button>
+              ) : (!shipments || shipments.length === 0) ? (
+                <Button
+                  variant="primary"
+                  onClick={() => setShowCreateShipmentModal(true)}
+                >
+                  <Truck className="mr-2 h-4 w-4" />
+                  Create Shipment
+                </Button>
+              ) : (
+                <div className="flex items-center gap-2 rounded-md bg-blue-50 px-3 py-2 text-sm text-blue-700">
+                  <AlertCircle className="h-4 w-4" />
+                  <span>Shipment already created for this order</span>
+                </div>
+              )}
+            </>
+          )}
+          {/* Show message if order status doesn't allow shipment creation */}
+          {order.status === 'Pending' && (
+            <div className="flex items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700">
+              <AlertCircle className="h-4 w-4" />
+              <span>Confirm order to create shipment</span>
+            </div>
           )}
           {['Pending', 'Confirmed'].includes(order.status) && (
             <Button
@@ -168,9 +247,24 @@ export default function OrderDetailPage({ params }: PageProps) {
           {/* Order Status */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Clock className="h-5 w-5" />
-                Order Status
+              <CardTitle className="flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <Clock className="h-5 w-5" />
+                  Order Status
+                </span>
+                {allowedStatusTransitions.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowStatusDropdown(!showStatusDropdown)}
+                    disabled={updateStatus.isPending}
+                  >
+                    {updateStatus.isPending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : null}
+                    Change Status
+                  </Button>
+                )}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -181,8 +275,159 @@ export default function OrderDetailPage({ params }: PageProps) {
                   <Badge variant="warning">COD</Badge>
                 )}
               </div>
+
+              {/* Status Change Dropdown */}
+              {showStatusDropdown && allowedStatusTransitions.length > 0 && (
+                <div className="mt-4 rounded-lg border bg-muted/50 p-4">
+                  <h4 className="mb-3 text-sm font-medium">Change Order Status</h4>
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap gap-2">
+                      {allowedStatusTransitions.map((status) => (
+                        <Button
+                          key={status}
+                          variant={status === 'Cancelled' || status === 'RTO' ? 'outline' : 'primary'}
+                          size="sm"
+                          onClick={() => handleStatusChange(status)}
+                          disabled={updateStatus.isPending}
+                          className={
+                            status === 'Cancelled' || status === 'RTO'
+                              ? 'border-error text-error hover:bg-error/10'
+                              : ''
+                          }
+                        >
+                          {STATUS_LABELS[status]}
+                        </Button>
+                      ))}
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs text-muted-foreground">
+                        Remarks (optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={statusRemarks}
+                        onChange={(e) => setStatusRemarks(e.target.value)}
+                        placeholder="Add a note about this status change..."
+                        className="w-full rounded border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setShowStatusDropdown(false);
+                        setStatusRemarks('');
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
+
+          {/* Shipments */}
+          {shipments && shipments.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Truck className="h-5 w-5" />
+                  Shipments ({shipments.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {shipments.map((shipment) => (
+                    <div
+                      key={shipment.id}
+                      className="rounded-lg border p-4"
+                    >
+                      {/* Pending Courier Assignment Warning */}
+                      {shipment.status === 'Created' && !shipment.awbNumber && (
+                        <div className="mb-3 flex items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+                          <AlertCircle className="h-4 w-4" />
+                          <span>Shipment created but courier not assigned. Click "Assign Courier" to complete.</span>
+                        </div>
+                      )}
+                      <div className="flex items-start justify-between">
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            {shipment.awbNumber ? (
+                              <span className="font-medium">AWB: {shipment.awbNumber}</span>
+                            ) : (
+                              <span className="font-medium text-muted-foreground">AWB: Pending</span>
+                            )}
+                            <Badge
+                              variant={
+                                shipment.status === 'Delivered'
+                                  ? 'success'
+                                  : shipment.status === 'InTransit' || shipment.status === 'OutForDelivery'
+                                  ? 'info'
+                                  : shipment.status === 'RTOInitiated' || shipment.status === 'RTODelivered' || shipment.status === 'Cancelled'
+                                  ? 'error'
+                                  : shipment.status === 'Created'
+                                  ? 'warning'
+                                  : 'default'
+                              }
+                            >
+                              {shipment.status}
+                            </Badge>
+                          </div>
+                          {shipment.courierName && (
+                            <p className="text-sm text-muted-foreground">
+                              Courier: {shipment.courierName}
+                            </p>
+                          )}
+                          {shipment.trackingUrl && (
+                            <a
+                              href={shipment.trackingUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm text-primary hover:underline"
+                            >
+                              Track Shipment →
+                            </a>
+                          )}
+                          {shipment.estimatedDeliveryDate && (
+                            <p className="text-sm text-muted-foreground">
+                              Expected: {formatDateTime(shipment.estimatedDeliveryDate)}
+                            </p>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm text-muted-foreground">
+                            <p>Created: {formatDateTime(shipment.createdAt)}</p>
+                            {shipment.actualDeliveryDate && (
+                              <p>Delivered: {formatDateTime(shipment.actualDeliveryDate)}</p>
+                            )}
+                          </div>
+                          {/* Assign Courier Button for Created status shipments */}
+                          {shipment.status === 'Created' && !shipment.awbNumber && (
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              className="mt-2"
+                              onClick={() => {
+                                setSelectedShipmentForCourier({
+                                  id: shipment.id,
+                                  number: shipment.shipmentNumber || `Shipment #${shipment.id.substring(0, 8)}`,
+                                });
+                                setShowAssignCourierModal(true);
+                              }}
+                            >
+                              <Link2 className="mr-1 h-4 w-4" />
+                              Assign Courier
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Order Items */}
           <Card>
@@ -390,8 +635,10 @@ export default function OrderDetailPage({ params }: PageProps) {
           {/* Modal */}
           <div className="relative z-50 w-full max-w-md rounded-lg bg-background p-6 shadow-lg">
             <button
+              type="button"
               onClick={() => setShowDeleteModal(false)}
               className="absolute right-4 top-4 rounded p-1 hover:bg-muted"
+              aria-label="Close modal"
             >
               <X className="h-4 w-4" />
             </button>
@@ -425,6 +672,27 @@ export default function OrderDetailPage({ params }: PageProps) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Create Shipment Modal */}
+      <CreateShipmentModal
+        isOpen={showCreateShipmentModal}
+        onClose={() => setShowCreateShipmentModal(false)}
+        orderId={orderId}
+        orderNumber={order.orderNumber}
+      />
+
+      {/* Assign Courier Modal */}
+      {selectedShipmentForCourier && (
+        <AssignCourierModal
+          isOpen={showAssignCourierModal}
+          onClose={() => {
+            setShowAssignCourierModal(false);
+            setSelectedShipmentForCourier(null);
+          }}
+          shipmentId={selectedShipmentForCourier.id}
+          shipmentNumber={selectedShipmentForCourier.number}
+        />
       )}
     </DashboardLayout>
   );

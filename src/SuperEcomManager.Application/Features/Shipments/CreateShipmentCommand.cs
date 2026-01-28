@@ -18,9 +18,11 @@ namespace SuperEcomManager.Application.Features.Shipments;
 public record CreateShipmentCommand : IRequest<Result<ShipmentDetailDto>>, ITenantRequest
 {
     public Guid OrderId { get; init; }
-    public CourierType CourierType { get; init; }
+    public Guid? CourierAccountId { get; init; }
+    public CourierType? CourierType { get; init; }
     public AddressDto? PickupAddress { get; init; }
     public DimensionsDto? Dimensions { get; init; }
+    public string? ServiceCode { get; init; }
     public List<CreateShipmentItemDto>? Items { get; init; }
 }
 
@@ -36,13 +38,16 @@ public record CreateShipmentItemDto
 public class CreateShipmentCommandHandler : IRequestHandler<CreateShipmentCommand, Result<ShipmentDetailDto>>
 {
     private readonly ITenantDbContext _dbContext;
+    private readonly ICourierService _courierService;
     private readonly ILogger<CreateShipmentCommandHandler> _logger;
 
     public CreateShipmentCommandHandler(
         ITenantDbContext dbContext,
+        ICourierService courierService,
         ILogger<CreateShipmentCommandHandler> logger)
     {
         _dbContext = dbContext;
+        _courierService = courierService;
         _logger = logger;
     }
 
@@ -50,6 +55,60 @@ public class CreateShipmentCommandHandler : IRequestHandler<CreateShipmentComman
         CreateShipmentCommand request,
         CancellationToken cancellationToken)
     {
+        // Determine courier type and pickup location
+        CourierType courierType;
+        string pickupName = "Default Warehouse"; // Default value
+
+        if (request.CourierAccountId.HasValue)
+        {
+            var courierAccount = await _dbContext.CourierAccounts
+                .FirstOrDefaultAsync(c => c.Id == request.CourierAccountId.Value && c.DeletedAt == null, cancellationToken);
+
+            if (courierAccount == null)
+            {
+                return Result<ShipmentDetailDto>.Failure("Courier account not found");
+            }
+
+            if (!courierAccount.IsActive)
+            {
+                return Result<ShipmentDetailDto>.Failure("Courier account is not active");
+            }
+
+            if (!courierAccount.IsConnected)
+            {
+                return Result<ShipmentDetailDto>.Failure("Courier account is not connected");
+            }
+
+            courierType = courierAccount.CourierType;
+
+            // Extract pickup location name from settings JSON if available
+            if (!string.IsNullOrWhiteSpace(courierAccount.SettingsJson))
+            {
+                try
+                {
+                    var settings = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(courierAccount.SettingsJson);
+                    if (settings != null &&
+                        settings.TryGetValue("pickupLocation", out var pickupLocationValue) &&
+                        !string.IsNullOrWhiteSpace(pickupLocationValue?.ToString()))
+                    {
+                        pickupName = pickupLocationValue.ToString()!;
+                    }
+                }
+                catch
+                {
+                    // If JSON parsing fails, use default pickupName
+                }
+            }
+        }
+        else if (request.CourierType.HasValue)
+        {
+            courierType = request.CourierType.Value;
+        }
+        else
+        {
+            return Result<ShipmentDetailDto>.Failure("Either CourierAccountId or CourierType must be provided");
+        }
+
         // Get the order
         var order = await _dbContext.Orders
             .Include(o => o.Items)
@@ -90,16 +149,40 @@ public class CreateShipmentCommandHandler : IRequestHandler<CreateShipmentComman
                 request.PickupAddress.State,
                 request.PickupAddress.PostalCode,
                 request.PickupAddress.Country)
-            : order.ShippingAddress; // Use order shipping address as fallback
+            : new Address(
+                pickupName, // Use pickup name from courier settings
+                "0000000000", // TODO: Get from tenant settings
+                "Warehouse Address Line 1", // TODO: Get from tenant settings
+                null,
+                "Mumbai", // TODO: Get from tenant settings
+                "Maharashtra", // TODO: Get from tenant settings
+                "400001", // TODO: Get from tenant settings
+                "India");
+
+        // Create new delivery address instance (can't reuse owned entities)
+        var deliveryAddress = new Address(
+            !string.IsNullOrWhiteSpace(order.ShippingAddress.Name) ? order.ShippingAddress.Name : order.CustomerName,
+            order.ShippingAddress.Phone ?? order.CustomerPhone,
+            order.ShippingAddress.Line1,
+            order.ShippingAddress.Line2,
+            order.ShippingAddress.City,
+            order.ShippingAddress.State,
+            order.ShippingAddress.PostalCode,
+            order.ShippingAddress.Country);
+
+        // Create new COD amount instance if needed (can't reuse owned entities)
+        var codAmount = order.IsCOD && order.TotalAmount != null
+            ? new Money(order.TotalAmount.Amount, order.TotalAmount.Currency)
+            : null;
 
         // Create shipment
         var shipment = Shipment.Create(
             order.Id,
             pickupAddress,
-            order.ShippingAddress,
-            request.CourierType,
+            deliveryAddress,
+            courierType,
             order.IsCOD,
-            order.IsCOD ? order.TotalAmount : null);
+            codAmount);
 
         // Set dimensions if provided
         if (request.Dimensions != null)
@@ -141,12 +224,86 @@ public class CreateShipmentCommandHandler : IRequestHandler<CreateShipmentComman
             }
         }
 
-        _dbContext.Shipments.Add(shipment);
-        await _dbContext.SaveChangesAsync(cancellationToken);
-
+        // Step 1: Call Shiprocket API FIRST (before saving to database)
         _logger.LogInformation(
-            "Shipment {ShipmentNumber} created for order {OrderId} with courier {CourierType}",
-            shipment.ShipmentNumber, order.Id, request.CourierType);
+            "Calling {CourierType} API to create shipment for order {OrderNumber}",
+            courierType, order.OrderNumber);
+
+        var courierResult = await _courierService.CreateShipmentAsync(
+            shipment,
+            order,
+            request.CourierAccountId,
+            request.ServiceCode,
+            cancellationToken);
+
+        // Check for complete failure (order was NOT created in courier system)
+        if (!courierResult.Success && string.IsNullOrEmpty(courierResult.ExternalOrderId))
+        {
+            // Courier API failed completely - do NOT save shipment to database
+            _logger.LogError(
+                "Failed to create shipment in courier system for order {OrderId}: {Error}",
+                order.Id, courierResult.ErrorMessage);
+
+            return Result<ShipmentDetailDto>.Failure(
+                courierResult.ErrorMessage ?? "Failed to create shipment with courier");
+        }
+
+        // Step 2: Set external references (order was created in courier system)
+        if (!string.IsNullOrEmpty(courierResult.ExternalOrderId))
+        {
+            shipment.SetExternalReferences(
+                courierResult.ExternalOrderId,
+                courierResult.ExternalShipmentId);
+        }
+
+        // Step 3: Set AWB if assigned (partial success means no AWB)
+        if (!string.IsNullOrEmpty(courierResult.AwbNumber))
+        {
+            shipment.SetAwb(
+                courierResult.AwbNumber,
+                courierResult.CourierName,
+                courierResult.LabelUrl,
+                courierResult.TrackingUrl);
+        }
+        else if (courierResult.IsPartialSuccess)
+        {
+            _logger.LogWarning(
+                "Shipment created in courier system but AWB not assigned for order {OrderId}: {Error}",
+                order.Id, courierResult.ErrorMessage);
+        }
+
+        // Step 4: Save shipment to database
+        try
+        {
+            _dbContext.Shipments.Add(shipment);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            if (courierResult.IsPartialSuccess)
+            {
+                _logger.LogInformation(
+                    "Shipment {ShipmentNumber} created successfully (awaiting courier assignment). External Order ID: {ExternalOrderId}",
+                    shipment.ShipmentNumber, courierResult.ExternalOrderId);
+            }
+            else
+            {
+                _logger.LogInformation(
+                    "Shipment {ShipmentNumber} created successfully with AWB {AWB}",
+                    shipment.ShipmentNumber, courierResult.AwbNumber);
+            }
+        }
+        catch (Exception ex)
+        {
+            var awbInfo = !string.IsNullOrEmpty(courierResult.AwbNumber)
+                ? $"AWB: {courierResult.AwbNumber}"
+                : $"External Order ID: {courierResult.ExternalOrderId}";
+
+            _logger.LogError(ex,
+                "Error saving shipment to database for order {OrderId}. Shipment was created in courier system ({AwbInfo})",
+                order.Id, awbInfo);
+
+            return Result<ShipmentDetailDto>.Failure(
+                $"Shipment was created in courier system ({awbInfo}) but failed to save to database: {ex.Message}");
+        }
 
         // Return the created shipment
         var dto = new ShipmentDetailDto
@@ -185,6 +342,8 @@ public class CreateShipmentCommandHandler : IRequestHandler<CreateShipmentComman
             CODAmount = shipment.CODAmount?.Amount,
             CODCurrency = shipment.CODAmount?.Currency,
             CreatedAt = shipment.CreatedAt,
+            ExternalOrderId = shipment.ExternalOrderId,
+            ExternalShipmentId = shipment.ExternalShipmentId,
             CustomerName = order.CustomerName,
             CustomerPhone = order.CustomerPhone,
             Items = shipment.Items.Select(i => new ShipmentItemDto
@@ -197,6 +356,14 @@ public class CreateShipmentCommandHandler : IRequestHandler<CreateShipmentComman
             }).ToList(),
             TrackingHistory = new List<ShipmentTrackingDto>()
         };
+
+        // If partial success, include warning message
+        if (courierResult.IsPartialSuccess)
+        {
+            return Result<ShipmentDetailDto>.SuccessWithWarning(
+                dto,
+                $"Shipment created but courier not assigned: {courierResult.ErrorMessage}. You can assign a courier later.");
+        }
 
         return Result<ShipmentDetailDto>.Success(dto);
     }

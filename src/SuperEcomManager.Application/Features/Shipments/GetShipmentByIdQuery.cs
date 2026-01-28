@@ -96,6 +96,8 @@ public class GetShipmentByIdQueryHandler : IRequestHandler<GetShipmentByIdQuery,
             TrackingUrl = shipment.TrackingUrl,
             CreatedAt = shipment.CreatedAt,
             UpdatedAt = shipment.UpdatedAt,
+            ExternalOrderId = shipment.ExternalOrderId,
+            ExternalShipmentId = shipment.ExternalShipmentId,
             CustomerName = order?.CustomerName ?? "Unknown",
             CustomerPhone = order?.CustomerPhone,
             Items = shipment.Items.Select(i => new ShipmentItemDto

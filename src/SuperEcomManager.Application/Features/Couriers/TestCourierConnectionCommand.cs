@@ -1,5 +1,4 @@
 using MediatR;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SuperEcomManager.Application.Common.Attributes;
 using SuperEcomManager.Application.Common.Interfaces;
@@ -8,7 +7,7 @@ using SuperEcomManager.Application.Common.Models;
 namespace SuperEcomManager.Application.Features.Couriers;
 
 /// <summary>
-/// Command to test courier account connection.
+/// Command to test courier account connection by calling the courier API.
 /// </summary>
 [RequirePermission("couriers.view")]
 [RequireFeature("courier_management")]
@@ -22,23 +21,19 @@ public class CourierConnectionTestResult
     public bool IsConnected { get; set; }
     public string? Message { get; set; }
     public string? AccountName { get; set; }
-    public Dictionary<string, string>? AccountInfo { get; set; }
     public DateTime TestedAt { get; set; } = DateTime.UtcNow;
 }
 
 public class TestCourierConnectionCommandHandler : IRequestHandler<TestCourierConnectionCommand, Result<CourierConnectionTestResult>>
 {
-    private readonly ITenantDbContext _dbContext;
+    private readonly ICourierService _courierService;
     private readonly ILogger<TestCourierConnectionCommandHandler> _logger;
 
-    // Delegate for testing connection (injected from Integrations layer)
-    public Func<Guid, CancellationToken, Task<CourierConnectionTestResult>>? TestConnection { get; set; }
-
     public TestCourierConnectionCommandHandler(
-        ITenantDbContext dbContext,
+        ICourierService courierService,
         ILogger<TestCourierConnectionCommandHandler> logger)
     {
-        _dbContext = dbContext;
+        _courierService = courierService;
         _logger = logger;
     }
 
@@ -46,67 +41,28 @@ public class TestCourierConnectionCommandHandler : IRequestHandler<TestCourierCo
         TestCourierConnectionCommand request,
         CancellationToken cancellationToken)
     {
-        var account = await _dbContext.CourierAccounts
-            .FirstOrDefaultAsync(c => c.Id == request.AccountId, cancellationToken);
-
-        if (account == null)
-        {
-            return Result<CourierConnectionTestResult>.Failure("Courier account not found");
-        }
-
-        if (string.IsNullOrEmpty(account.ApiKey) && string.IsNullOrEmpty(account.AccessToken))
-        {
-            return Result<CourierConnectionTestResult>.Success(new CourierConnectionTestResult
-            {
-                IsConnected = false,
-                Message = "No credentials configured"
-            });
-        }
-
         try
         {
-            CourierConnectionTestResult result;
+            var connectionResult = await _courierService.TestConnectionAsync(
+                request.AccountId, cancellationToken);
 
-            if (TestConnection != null)
+            var result = new CourierConnectionTestResult
             {
-                result = await TestConnection(account.Id, cancellationToken);
-            }
-            else
-            {
-                // Simulate connection test when adapter is not available
-                result = new CourierConnectionTestResult
-                {
-                    IsConnected = true,
-                    Message = "Connection test simulated (adapter not configured)",
-                    AccountName = account.Name
-                };
-            }
-
-            // Update account connection status
-            if (result.IsConnected)
-            {
-                account.MarkConnected();
-            }
-            else
-            {
-                account.MarkDisconnected(result.Message);
-            }
-
-            await _dbContext.SaveChangesAsync(cancellationToken);
+                IsConnected = connectionResult.IsConnected,
+                Message = connectionResult.Message,
+                AccountName = connectionResult.AccountName,
+                TestedAt = DateTime.UtcNow
+            };
 
             _logger.LogInformation(
-                "Connection test for account {AccountId}: {IsConnected}",
-                account.Id, result.IsConnected);
+                "Connection test for account {AccountId}: {IsConnected} - {Message}",
+                request.AccountId, result.IsConnected, result.Message);
 
             return Result<CourierConnectionTestResult>.Success(result);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Connection test failed for account {AccountId}", account.Id);
-
-            account.MarkDisconnected(ex.Message);
-            await _dbContext.SaveChangesAsync(cancellationToken);
-
+            _logger.LogError(ex, "Connection test failed for account {AccountId}", request.AccountId);
             return Result<CourierConnectionTestResult>.Failure($"Connection test failed: {ex.Message}");
         }
     }

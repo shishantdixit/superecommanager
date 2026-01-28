@@ -534,7 +534,7 @@ export default function TeamPage() {
             Cancel
           </Button>
           <Button
-            variant={actionType === 'deactivate' ? 'danger' : 'default'}
+            variant={actionType === 'deactivate' ? 'danger' : 'primary'}
             onClick={handleUserAction}
             isLoading={activateUserMutation.isPending || deactivateUserMutation.isPending}
           >

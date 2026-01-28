@@ -25,10 +25,10 @@ const variantSchema = z.object({
   option1Value: z.string().optional(),
   option2Name: z.string().optional(),
   option2Value: z.string().optional(),
-  costPrice: z.coerce.number().min(0).optional(),
-  sellingPrice: z.coerce.number().min(0).optional(),
-  weight: z.coerce.number().min(0).optional(),
-  initialStock: z.coerce.number().int().min(0).default(0),
+  costPrice: z.number().min(0).optional(),
+  sellingPrice: z.number().min(0).optional(),
+  weight: z.number().min(0).optional(),
+  initialStock: z.number().int().min(0),
 });
 
 const productSchema = z.object({
@@ -37,14 +37,14 @@ const productSchema = z.object({
   description: z.string().optional(),
   category: z.string().optional(),
   brand: z.string().optional(),
-  costPrice: z.coerce.number().min(0, 'Cost price must be 0 or greater'),
-  sellingPrice: z.coerce.number().min(0, 'Selling price must be 0 or greater'),
-  currency: z.string().default('INR'),
-  weight: z.coerce.number().min(0).optional(),
+  costPrice: z.number().min(0, 'Cost price must be 0 or greater'),
+  sellingPrice: z.number().min(0, 'Selling price must be 0 or greater'),
+  currency: z.string(),
+  weight: z.number().min(0).optional(),
   imageUrl: z.string().url().optional().or(z.literal('')),
   hsnCode: z.string().optional(),
-  taxRate: z.coerce.number().min(0).max(100).optional(),
-  initialStock: z.coerce.number().int().min(0).default(0),
+  taxRate: z.number().min(0).max(100).optional(),
+  initialStock: z.number().int().min(0),
   variants: z.array(variantSchema).optional(),
 });
 
@@ -193,7 +193,7 @@ export default function NewProductPage() {
                       Cost Price <span className="text-error">*</span>
                     </label>
                     <Input
-                      {...register('costPrice')}
+                      {...register('costPrice', { valueAsNumber: true })}
                       type="number"
                       step="0.01"
                       min="0"
@@ -208,7 +208,7 @@ export default function NewProductPage() {
                       Selling Price <span className="text-error">*</span>
                     </label>
                     <Input
-                      {...register('sellingPrice')}
+                      {...register('sellingPrice', { valueAsNumber: true })}
                       type="number"
                       step="0.01"
                       min="0"
@@ -238,7 +238,7 @@ export default function NewProductPage() {
                 <CardTitle>Variants</CardTitle>
                 <Button
                   type="button"
-                  variant={showVariants ? 'outline' : 'default'}
+                  variant={showVariants ? 'outline' : 'primary'}
                   size="sm"
                   onClick={() => setShowVariants(!showVariants)}
                 >
@@ -310,7 +310,7 @@ export default function NewProductPage() {
                                 Selling Price (Override)
                               </label>
                               <Input
-                                {...register(`variants.${index}.sellingPrice`)}
+                                {...register(`variants.${index}.sellingPrice`, { valueAsNumber: true })}
                                 type="number"
                                 step="0.01"
                                 min="0"
@@ -320,7 +320,7 @@ export default function NewProductPage() {
                             <div>
                               <label className="block text-xs font-medium mb-1">Initial Stock</label>
                               <Input
-                                {...register(`variants.${index}.initialStock`)}
+                                {...register(`variants.${index}.initialStock`, { valueAsNumber: true })}
                                 type="number"
                                 min="0"
                                 placeholder="0"
@@ -356,7 +356,7 @@ export default function NewProductPage() {
                 <div>
                   <label className="block text-sm font-medium mb-1">Initial Stock</label>
                   <Input
-                    {...register('initialStock')}
+                    {...register('initialStock', { valueAsNumber: true })}
                     type="number"
                     min="0"
                     placeholder="0"
@@ -370,7 +370,7 @@ export default function NewProductPage() {
                 <div>
                   <label className="block text-sm font-medium mb-1">Weight (grams)</label>
                   <Input
-                    {...register('weight')}
+                    {...register('weight', { valueAsNumber: true })}
                     type="number"
                     step="0.1"
                     min="0"
@@ -393,7 +393,7 @@ export default function NewProductPage() {
                 <div>
                   <label className="block text-sm font-medium mb-1">Tax Rate (%)</label>
                   <Input
-                    {...register('taxRate')}
+                    {...register('taxRate', { valueAsNumber: true })}
                     type="number"
                     step="0.1"
                     min="0"

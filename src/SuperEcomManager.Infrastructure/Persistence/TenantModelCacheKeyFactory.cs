@@ -1,6 +1,5 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
-using SuperEcomManager.Application.Common.Interfaces;
 
 namespace SuperEcomManager.Infrastructure.Persistence;
 
@@ -14,8 +13,9 @@ public class TenantModelCacheKeyFactory : IModelCacheKeyFactory
     {
         if (context is TenantDbContext tenantContext)
         {
-            var currentTenantService = tenantContext.GetService<ICurrentTenantService>();
-            var schemaName = currentTenantService?.SchemaName ?? "public";
+            // Access schema directly from the context to ensure consistency
+            // with the schema used in OnModelCreating
+            var schemaName = tenantContext.CurrentSchemaName;
             return (context.GetType(), schemaName, designTime);
         }
 

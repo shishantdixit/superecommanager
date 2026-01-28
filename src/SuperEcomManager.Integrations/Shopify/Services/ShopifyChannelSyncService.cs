@@ -63,6 +63,12 @@ public class ShopifyChannelSyncService : IChannelSyncService
             };
         }
 
+        // Log current channel settings for debugging
+        _logger.LogInformation(
+            "Channel settings - InitialSyncDays: {InitialSyncDays}, OrderSyncLimit: {OrderSyncLimit}",
+            channel.InitialSyncDays?.ToString() ?? "null (all time)",
+            channel.OrderSyncLimit?.ToString() ?? "null (unlimited)");
+
         // Use AccessToken for OAuth-based channels
         var accessToken = channel.AccessToken ?? channel.CredentialsEncrypted;
         if (string.IsNullOrEmpty(accessToken))
@@ -82,6 +88,10 @@ public class ShopifyChannelSyncService : IChannelSyncService
             _logger.LogInformation("Applying InitialSyncDays={Days}, syncing orders from {FromDate}",
                 channel.InitialSyncDays.Value, fromDate);
         }
+        else if (!fromDate.HasValue && !channel.InitialSyncDays.HasValue)
+        {
+            _logger.LogInformation("No date filter - syncing ALL orders (InitialSyncDays is null)");
+        }
 
         var result = new ChannelSyncResult
         {
@@ -91,29 +101,42 @@ public class ShopifyChannelSyncService : IChannelSyncService
 
         var shopDomain = channel.StoreUrl!.Replace("https://", "").Replace("http://", "").TrimEnd('/');
 
+        // Apply sync limit from channel settings
+        // If OrderSyncLimit is null (unlimited), use a very high limit
+        var orderSyncLimit = channel.OrderSyncLimit ?? 100000; // Default to 100000 if unlimited
+        _logger.LogInformation("Applying OrderSyncLimit={Limit} for order sync",
+            channel.OrderSyncLimit.HasValue ? $"{orderSyncLimit}" : "unlimited (100000)");
+
         try
         {
-            _logger.LogInformation("Starting order sync for channel {ChannelId}, shop: {ShopDomain}",
-                channelId, shopDomain);
+            _logger.LogInformation("Starting order sync for channel {ChannelId}, shop: {ShopDomain}, limit: {Limit}",
+                channelId, shopDomain, orderSyncLimit);
 
             string? pageInfo = null;
             var hasMorePages = true;
             var totalProcessed = 0;
 
-            while (hasMorePages && totalProcessed < 10000) // Safety limit
+            while (hasMorePages && totalProcessed < orderSyncLimit)
             {
+                var batchSize = Math.Min(250, orderSyncLimit - totalProcessed);
+                _logger.LogInformation("Fetching batch: batchSize={BatchSize}, totalProcessed={TotalProcessed}, limit={Limit}",
+                    batchSize, totalProcessed, orderSyncLimit);
+
                 var orders = await _shopifyClient.GetOrdersAsync(
                     shopDomain,
                     accessToken,
                     createdAtMin: fromDate,
                     createdAtMax: toDate,
                     status: "any",
-                    limit: 250,
+                    limit: batchSize,
                     pageInfo: pageInfo,
                     cancellationToken: cancellationToken);
 
+                _logger.LogInformation("Received {OrderCount} orders from Shopify API", orders.Count);
+
                 if (orders.Count == 0)
                 {
+                    _logger.LogInformation("No more orders returned - stopping pagination");
                     hasMorePages = false;
                     continue;
                 }
@@ -136,8 +159,8 @@ public class ShopifyChannelSyncService : IChannelSyncService
                 // Save in batches
                 await _dbContext.SaveChangesAsync(cancellationToken);
 
-                // Check for pagination
-                hasMorePages = orders.Count == 250;
+                // Check if we've reached the limit or if there are more orders
+                hasMorePages = orders.Count == batchSize && totalProcessed < orderSyncLimit;
                 pageInfo = null; // Would need to extract from response headers for real pagination
             }
 
@@ -260,6 +283,7 @@ public class ShopifyChannelSyncService : IChannelSyncService
                     {
                         await ProcessProductAsync(
                             shopifyProduct,
+                            channelId,
                             existingProducts,
                             existingVariants,
                             existingInventory,
@@ -306,6 +330,7 @@ public class ShopifyChannelSyncService : IChannelSyncService
 
     private async Task ProcessProductAsync(
         Models.ShopifyProduct shopifyProduct,
+        Guid channelId,
         Dictionary<string, Product> existingProducts,
         Dictionary<string, ProductVariant> existingVariants,
         Dictionary<string, InventoryItem> existingInventory,
@@ -385,6 +410,7 @@ public class ShopifyChannelSyncService : IChannelSyncService
                     Domain.ValueObjects.Money.Zero, // Cost price unknown from Shopify
                     sellingPrice);
 
+                product.SetSourceChannel(channelId);
                 product.Update(
                     truncatedTitle,
                     StripHtml(shopifyProduct.BodyHtml),
@@ -472,6 +498,7 @@ public class ShopifyChannelSyncService : IChannelSyncService
                     Domain.ValueObjects.Money.Zero,
                     new Domain.ValueObjects.Money(avgPrice, "INR"));
 
+                parentProduct.SetSourceChannel(channelId);
                 parentProduct.Update(
                     truncatedTitle,
                     StripHtml(shopifyProduct.BodyHtml),

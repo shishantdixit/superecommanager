@@ -69,6 +69,9 @@ public class GetProductsQueryHandler : IRequestHandler<GetProductsQuery, Result<
 
             if (filter.SyncStatus.HasValue)
                 query = query.Where(p => p.SyncStatus == filter.SyncStatus.Value);
+
+            if (filter.ChannelId.HasValue)
+                query = query.Where(p => p.SourceChannelId == filter.ChannelId.Value);
         }
 
         // Get total count

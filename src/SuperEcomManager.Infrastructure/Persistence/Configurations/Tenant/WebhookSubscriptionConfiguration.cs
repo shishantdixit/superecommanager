@@ -32,9 +32,10 @@ public class WebhookSubscriptionConfiguration : IEntityTypeConfiguration<Webhook
             .HasColumnType("jsonb")
             .HasDefaultValueSql("'{}'::jsonb");
 
-        // Store Events as jsonb array
+        // Store Events as PostgreSQL integer array (enum values)
+        // This allows proper EF Core translation for Contains queries
         builder.Property(w => w.Events)
-            .HasColumnType("jsonb");
+            .HasColumnType("integer[]");
 
         builder.Property(w => w.MaxRetries)
             .HasDefaultValue(3);

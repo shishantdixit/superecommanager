@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\SuperEcomManager.Domain\SuperEcomManager.Domain.csproj" />
     <ProjectReference Include="..\SuperEcomManager.Application\SuperEcomManager.Application.csproj" />
+    <ProjectReference Include="..\SuperEcomManager.Integrations\SuperEcomManager.Integrations.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -5,7 +5,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
-using SuperEcomManager.Domain.Enums;
 using SuperEcomManager.Infrastructure.Persistence;
 
 #nullable disable
@@ -614,6 +613,10 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<Guid?>("SourceChannelId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("source_channel_id");
+
                     b.Property<int>("SyncStatus")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
@@ -646,6 +649,8 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
 
                     b.HasIndex("Sku")
                         .IsUnique();
+
+                    b.HasIndex("SourceChannelId");
 
                     b.HasIndex("SyncStatus");
 
@@ -1392,6 +1397,14 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
                     b.Property<DateTime?>("ExpectedDeliveryDate")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("ExternalOrderId")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("ExternalShipmentId")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
                     b.Property<bool>("IsCOD")
                         .HasColumnType("boolean");
 
@@ -1430,6 +1443,10 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
                     b.HasIndex("AwbNumber");
 
                     b.HasIndex("CourierType");
+
+                    b.HasIndex("ExternalOrderId");
+
+                    b.HasIndex("ExternalShipmentId");
 
                     b.HasIndex("OrderId");
 
@@ -1680,9 +1697,9 @@ namespace SuperEcomManager.Infrastructure.Persistence.Migrations.Tenant
                     b.Property<Guid?>("CreatedBy")
                         .HasColumnType("uuid");
 
-                    b.PrimitiveCollection<List<WebhookEvent>>("Events")
+                    b.PrimitiveCollection<int[]>("Events")
                         .IsRequired()
-                        .HasColumnType("jsonb");
+                        .HasColumnType("integer[]");
 
                     b.Property<int>("FailedDeliveries")
                         .HasColumnType("integer");

@@ -26,6 +26,7 @@ public class InventoryController : ApiControllerBase
         [FromQuery] decimal? minPrice,
         [FromQuery] decimal? maxPrice,
         [FromQuery] SyncStatus? syncStatus,
+        [FromQuery] Guid? channelId,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         [FromQuery] ProductSortBy sortBy = ProductSortBy.Name,
@@ -42,7 +43,8 @@ public class InventoryController : ApiControllerBase
                 IsLowStock = isLowStock,
                 MinPrice = minPrice,
                 MaxPrice = maxPrice,
-                SyncStatus = syncStatus
+                SyncStatus = syncStatus,
+                ChannelId = channelId
             },
             Page = page,
             PageSize = pageSize,

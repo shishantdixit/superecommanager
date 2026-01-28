@@ -28,6 +28,11 @@ public class Product : AuditableEntity, ISoftDeletable
     public string? ChannelProductId { get; private set; }
     public Money? ChannelSellingPrice { get; private set; }
 
+    /// <summary>
+    /// The channel this product was synced from. Null for locally-created products.
+    /// </summary>
+    public Guid? SourceChannelId { get; private set; }
+
     public DateTime? DeletedAt { get; set; }
     public Guid? DeletedBy { get; set; }
 
@@ -120,6 +125,12 @@ public class Product : AuditableEntity, ISoftDeletable
     public void SetChannelProductId(string channelProductId)
     {
         ChannelProductId = channelProductId;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    public void SetSourceChannel(Guid channelId)
+    {
+        SourceChannelId = channelId;
         UpdatedAt = DateTime.UtcNow;
     }
 

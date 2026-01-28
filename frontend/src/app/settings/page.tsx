@@ -50,7 +50,7 @@ const businessSchema = z.object({
   city: z.string().optional(),
   state: z.string().optional(),
   postalCode: z.string().optional(),
-  country: z.string().default('IN'),
+  country: z.string(),
   gstNumber: z.string().optional(),
   panNumber: z.string().optional(),
 });
@@ -291,31 +291,20 @@ export default function SettingsPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <IntegrationCard
-                  name="Shopify"
-                  description="Sync orders and inventory from your Shopify store"
-                  connected={true}
-                />
-                <IntegrationCard
-                  name="Amazon"
-                  description="Connect your Amazon Seller Central account"
-                  connected={false}
-                />
-                <IntegrationCard
-                  name="Flipkart"
-                  description="Integrate with Flipkart Seller Hub"
-                  connected={false}
-                />
-                <IntegrationCard
-                  name="Meesho"
-                  description="Connect your Meesho supplier account"
-                  connected={false}
-                />
-                <IntegrationCard
-                  name="Shiprocket"
-                  description="Manage shipments and tracking"
-                  connected={true}
-                />
+                <div className="rounded-lg border border-dashed p-6 text-center">
+                  <LinkIcon className="h-12 w-12 mx-auto text-gray-300 mb-3" />
+                  <p className="font-medium text-gray-900 mb-2">
+                    Manage your integrations
+                  </p>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Configure e-commerce channels, shipping partners, payment gateways, and notification services
+                  </p>
+                  <Button
+                    onClick={() => (window.location.href = '/settings/integrations')}
+                  >
+                    Go to Integrations Settings
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           )}

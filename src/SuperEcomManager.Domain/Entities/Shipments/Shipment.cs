@@ -32,6 +32,16 @@ public class Shipment : AuditableEntity, ISoftDeletable
     public string? TrackingUrl { get; private set; }
     public string? CourierResponse { get; private set; }
 
+    /// <summary>
+    /// External order ID from the courier system (e.g., Shiprocket order_id).
+    /// </summary>
+    public string? ExternalOrderId { get; private set; }
+
+    /// <summary>
+    /// External shipment ID from the courier system (e.g., Shiprocket shipment_id).
+    /// </summary>
+    public string? ExternalShipmentId { get; private set; }
+
     public DateTime? DeletedAt { get; set; }
     public Guid? DeletedBy { get; set; }
 
@@ -73,6 +83,17 @@ public class Shipment : AuditableEntity, ISoftDeletable
         LabelUrl = labelUrl;
         TrackingUrl = trackingUrl;
         Status = ShipmentStatus.Manifested;
+        UpdatedAt = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Sets external courier system references (order ID and shipment ID).
+    /// Called when order is created in courier system, even if AWB is not yet assigned.
+    /// </summary>
+    public void SetExternalReferences(string? externalOrderId, string? externalShipmentId)
+    {
+        ExternalOrderId = externalOrderId;
+        ExternalShipmentId = externalShipmentId;
         UpdatedAt = DateTime.UtcNow;
     }
 
