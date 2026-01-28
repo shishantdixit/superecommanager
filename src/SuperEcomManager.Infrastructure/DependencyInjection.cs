@@ -87,10 +87,26 @@ public static class DependencyInjection
         services.AddScoped<ICourierWalletService, CourierWalletService>();
         services.AddScoped<IShiprocketChannelService, ShiprocketChannelService>();
 
+        // Chat services
+        services.Configure<AnthropicSettings>(configuration.GetSection(AnthropicSettings.SectionName));
+        services.AddScoped<IChatService, ChatService>();
+        services.AddSingleton<IChatToolRegistry, ChatToolRegistry>();
+        services.AddScoped<IChatOrchestrator, AnthropicChatOrchestrator>();
+        services.AddScoped<IChatToolProvider, ShippingToolProvider>();
+
+        // Register tool providers with the registry
+        services.AddHostedService<ChatToolRegistrationService>();
+
         // Register HttpClient for webhook delivery
         services.AddHttpClient("Webhook", client =>
         {
             client.DefaultRequestHeaders.Add("User-Agent", "SuperEcomManager-Webhook/1.0");
+        });
+
+        // Register HttpClient for Anthropic API
+        services.AddHttpClient("Anthropic", client =>
+        {
+            client.DefaultRequestHeaders.Add("User-Agent", "SuperEcomManager-Chat/1.0");
         });
 
         // Register distributed cache (Redis)

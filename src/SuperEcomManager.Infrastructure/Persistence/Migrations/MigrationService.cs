@@ -134,20 +134,40 @@ public class MigrationService : IMigrationService
                 tenantId, tenant.SchemaName);
 
             using var scope = _serviceProvider.CreateScope();
+
+            // Set the tenant context BEFORE resolving TenantDbContext
+            var currentTenantService = scope.ServiceProvider.GetRequiredService<ICurrentTenantService>();
+            currentTenantService.SetTenant(tenant.Id, tenant.SchemaName, tenant.Slug);
+
+            // Now resolve TenantDbContext - it will use the schema from CurrentTenantService
             var tenantDbContext = scope.ServiceProvider.GetRequiredService<TenantDbContext>();
 
-            // Set the tenant context
-            var currentTenantService = scope.ServiceProvider.GetRequiredService<ICurrentTenantService>();
-            // Note: This would need to be handled through a mechanism to set tenant context
+            // Get pending migrations for this tenant
+            var pendingMigrations = await tenantDbContext.Database
+                .GetPendingMigrationsAsync(cancellationToken);
+
+            result.PendingBefore = pendingMigrations.ToList();
+
+            if (!result.PendingBefore.Any())
+            {
+                result.Success = true;
+                result.Message = "No pending migrations for this tenant";
+                return result;
+            }
+
+            _logger.LogInformation(
+                "Found {Count} pending migrations for tenant {TenantId}",
+                result.PendingBefore.Count, tenantId);
 
             await tenantDbContext.Database.MigrateAsync(cancellationToken);
 
             result.Success = true;
-            result.Message = "Tenant migrations applied successfully";
+            result.AppliedMigrations = result.PendingBefore;
+            result.Message = $"Applied {result.AppliedMigrations.Count} migrations successfully";
 
             _logger.LogInformation(
-                "Tenant {TenantId} migrations applied successfully",
-                tenantId);
+                "Tenant {TenantId} migrations applied successfully: {Migrations}",
+                tenantId, string.Join(", ", result.AppliedMigrations));
         }
         catch (Exception ex)
         {

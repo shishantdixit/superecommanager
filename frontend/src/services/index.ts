@@ -8,3 +8,4 @@ export * from './finance.service';
 export * from './team.service';
 export * from './analytics.service';
 export * from './channels.service';
+export * from './chat.service';

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using SuperEcomManager.Domain.Entities.Audit;
 using SuperEcomManager.Domain.Entities.Channels;
+using SuperEcomManager.Domain.Entities.Chat;
 using SuperEcomManager.Domain.Entities.Finance;
 using SuperEcomManager.Domain.Entities.Identity;
 using SuperEcomManager.Domain.Entities.Inventory;
@@ -72,6 +73,10 @@ public interface ITenantDbContext
     // Webhooks
     DbSet<WebhookSubscription> WebhookSubscriptions { get; }
     DbSet<WebhookDelivery> WebhookDeliveries { get; }
+
+    // Chat
+    DbSet<ChatConversation> ChatConversations { get; }
+    DbSet<ChatMessage> ChatMessages { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 

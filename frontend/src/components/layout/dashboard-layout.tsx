@@ -3,6 +3,7 @@
 import { type ReactNode } from 'react';
 import { Sidebar } from './sidebar';
 import { Header } from './header';
+import { ChatWidget } from '@/components/chat';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -23,6 +24,9 @@ export function DashboardLayout({ children, title }: DashboardLayoutProps) {
         {/* Page content */}
         <main className="flex-1 overflow-y-auto p-6">{children}</main>
       </div>
+
+      {/* AI Chat Assistant */}
+      <ChatWidget />
     </div>
   );
 }

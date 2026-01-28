@@ -3,6 +3,7 @@ using SuperEcomManager.Application.Common.Interfaces;
 using SuperEcomManager.Domain.Common;
 using SuperEcomManager.Domain.Entities.Audit;
 using SuperEcomManager.Domain.Entities.Channels;
+using SuperEcomManager.Domain.Entities.Chat;
 using SuperEcomManager.Domain.Entities.Finance;
 using SuperEcomManager.Domain.Entities.Identity;
 using SuperEcomManager.Domain.Entities.Inventory;
@@ -95,6 +96,10 @@ public class TenantDbContext : DbContext, ITenantDbContext
     // Webhooks
     public DbSet<WebhookSubscription> WebhookSubscriptions => Set<WebhookSubscription>();
     public DbSet<WebhookDelivery> WebhookDeliveries => Set<WebhookDelivery>();
+
+    // Chat
+    public DbSet<ChatConversation> ChatConversations => Set<ChatConversation>();
+    public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
